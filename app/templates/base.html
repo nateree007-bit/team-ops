@@ -4,23 +4,32 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Team Ops{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-  <div class="nav">
-    <div class="brand">
-      <img src="/static/logo.png" alt="Islanders logo">
-      <span>Islanders Men's Basketball</span>
-    </div>
-    <a href="/" class="{{ 'active' if active == 'dashboard' }}">Dashboard</a>
-    <a href="/players" class="{{ 'active' if active == 'players' }}">Roster</a>
-    <a href="/schedule" class="{{ 'active' if active == 'schedule' }}">Schedule</a>
-    <a href="/scouting" class="{{ 'active' if active == 'scouting' }}">Scouting</a>
-    <a href="/tasks" class="{{ 'active' if active == 'tasks' }}">Tasks</a>
-    <a href="/threehundred" class="{{ 'active' if active == 'threehundred' }}">300 Club</a>
-  </div>
-  <div class="container">
-    {% block content %}{% endblock %}
+  <div class="layout">
+    <nav class="sidebar">
+      <div class="sidebar-brand">
+        <img src="/static/logo.png" alt="Islanders logo">
+        <span>Islanders Men's Basketball</span>
+      </div>
+      <div class="sidebar-links">
+        <a href="/" class="{{ 'active' if active == 'dashboard' }}">Dashboard</a>
+        <a href="/players" class="{{ 'active' if active == 'players' }}">Roster</a>
+        <a href="/schedule" class="{{ 'active' if active == 'schedule' }}">Schedule</a>
+        <a href="/scouting" class="{{ 'active' if active == 'scouting' }}">Scouting</a>
+        <a href="/tasks" class="{{ 'active' if active == 'tasks' }}">Tasks</a>
+        <a href="/threehundred" class="{{ 'active' if active == 'threehundred' }}">300 Club</a>
+      </div>
+    </nav>
+    <main class="content">
+      <div class="container">
+        {% block content %}{% endblock %}
+      </div>
+    </main>
   </div>
 </body>
 </html>
