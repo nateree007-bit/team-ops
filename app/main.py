@@ -3,6 +3,7 @@ import json
 import os
 import secrets
 from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import anthropic
 from fastapi import FastAPI, File, Form, Request, UploadFile
@@ -16,6 +17,20 @@ from . import db
 AUTH_USER = os.environ.get("TEAM_OPS_USER")
 AUTH_PASSWORD = os.environ.get("TEAM_OPS_PASSWORD")
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
+
+# The team is in Corpus Christi (US Central). Railway's servers run in UTC,
+# so "now"/"today" for anything user-facing must be computed in this zone,
+# not the server's clock, or the dashboard's what's-next / today logic is
+# hours off.
+TEAM_TZ = ZoneInfo(os.environ.get("TEAM_TIMEZONE", "America/Chicago"))
+
+
+def _now_local() -> datetime:
+    return datetime.now(TEAM_TZ)
+
+
+def _today_local() -> date:
+    return _now_local().date()
 
 
 class BasicAuthMiddleware(BaseHTTPMiddleware):
@@ -84,8 +99,9 @@ templates.env.filters["fmt_time"] = _fmt_time
 @app.get("/")
 def dashboard(request: Request):
     conn = db.get_connection()
-    today = date.today().isoformat()
-    now_time = datetime.now().strftime("%H:%M")
+    now_local = _now_local()
+    today = now_local.date().isoformat()
+    now_time = now_local.strftime("%H:%M")
 
     today_rows = conn.execute(
         "SELECT * FROM events WHERE event_date = ? ORDER BY (event_time IS NULL), event_time",
@@ -114,9 +130,9 @@ def dashboard(request: Request):
     next_event_label = None
     if next_event:
         ev_date = datetime.strptime(next_event["event_date"], "%Y-%m-%d").date()
-        if ev_date == date.today():
+        if ev_date == now_local.date():
             when = "Today"
-        elif ev_date == date.today() + timedelta(days=1):
+        elif ev_date == now_local.date() + timedelta(days=1):
             when = "Tomorrow"
         else:
             when = f"{ev_date.strftime('%a')} {ev_date.month}/{ev_date.day}"
@@ -139,7 +155,7 @@ def dashboard(request: Request):
     ).fetchall()
     conn.close()
 
-    today_date = date.today()
+    today_date = now_local.date()
     upcoming_birthdays = []
     for row in birthday_rows:
         try:
@@ -254,7 +270,7 @@ def delete_player(player_id: int):
 
 @app.get("/schedule")
 def list_schedule(request: Request, week: str = ""):
-    today = date.today()
+    today = _today_local()
     if week:
         try:
             requested = datetime.strptime(week, "%Y-%m-%d").date()
@@ -421,7 +437,7 @@ async def save_stats(event_id: int, request: Request):
 def _build_schedule_import_prompt() -> str:
     return f"""You are extracting a structured weekly schedule from a basketball team's schedule PDF.
 
-Today's date is {date.today().isoformat()}. The PDF's day headers (e.g. "Monday, July 20th") never
+Today's date is {_today_local().isoformat()}. The PDF's day headers (e.g. "Monday, July 20th") never
 state a year — use today's date to infer the correct year for every event (the schedule always refers
 to a week at or near the current date, not a past year).
 
@@ -666,7 +682,7 @@ def _week_start(d: date) -> date:
 
 @app.get("/threehundred")
 def three_hundred(request: Request, week: str = ""):
-    today = date.today()
+    today = _today_local()
     if week:
         try:
             requested = datetime.strptime(week, "%Y-%m-%d").date()
