@@ -629,6 +629,11 @@ tr.past td { opacity: .45; }
   to { opacity: 1; transform: translateY(0); }
 }
 
+/* The create panel must paint above its sibling panels so the
+   assignee dropdowns can overlap the lists below (each panel's
+   backdrop-filter forms its own stacking context). */
+.todo-create-panel { position: relative; z-index: 40; }
+
 .assignee-menu[hidden] { display: none; }
 
 .assignee-menu {
