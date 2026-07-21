@@ -2,7 +2,7 @@
 {% block title %}{{ event.title }} · Team Ops{% endblock %}
 {% block content %}
 <div class="actions-row">
-  <h1>{{ event.title }} <span class="badge {{ event.type }}">{{ event.type }}</span></h1>
+  <h1>{{ event.title }} <span class="badge {{ event.type }}">{{ event.type.replace('_', ' ')|title }}</span></h1>
   <form class="inline" method="post" action="/schedule/{{ event.id }}/delete" onsubmit="return confirm('Delete this event?')">
     <button type="submit" class="danger">Delete event</button>
   </form>
@@ -14,14 +14,15 @@
     <div class="form-grid">
       <div><label>Type</label>
         <select name="type">
-          {% for t in ['game','practice','travel','other'] %}
-          <option value="{{ t }}" {{ 'selected' if event.type == t }}>{{ t|capitalize }}</option>
+          {% for t in ['practice','conditioning','weights','meal','study_hall','meeting','game','travel','other'] %}
+          <option value="{{ t }}" {{ 'selected' if event.type == t }}>{{ t.replace('_', ' ')|title }}</option>
           {% endfor %}
         </select>
       </div>
       <div><label>Title</label><input name="title" value="{{ event.title }}" required></div>
       <div><label>Date</label><input type="date" name="event_date" value="{{ event.event_date }}" required></div>
-      <div><label>Time</label><input type="time" name="event_time" value="{{ event.event_time or '' }}"></div>
+      <div><label>Start time</label><input type="time" name="event_time" value="{{ event.event_time or '' }}"></div>
+      <div><label>End time</label><input type="time" name="event_time_end" value="{{ event.event_time_end or '' }}"></div>
       <div><label>Location</label><input name="location" value="{{ event.location or '' }}"></div>
       <div><label>Opponent</label><input name="opponent" value="{{ event.opponent or '' }}"></div>
     </div>

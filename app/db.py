@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS events (
     title TEXT NOT NULL,
     event_date TEXT NOT NULL,
     event_time TEXT,
+    event_time_end TEXT,
     location TEXT,
     opponent TEXT,
     notes TEXT,
@@ -91,6 +92,9 @@ def init_db():
         columns = {row["name"] for row in conn.execute("PRAGMA table_info(players)")}
         if "birthday" not in columns:
             conn.execute("ALTER TABLE players ADD COLUMN birthday TEXT")
+        event_columns = {row["name"] for row in conn.execute("PRAGMA table_info(events)")}
+        if "event_time_end" not in event_columns:
+            conn.execute("ALTER TABLE events ADD COLUMN event_time_end TEXT")
         conn.commit()
     finally:
         conn.close()

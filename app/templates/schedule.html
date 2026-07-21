@@ -9,40 +9,59 @@
     <div class="form-grid">
       <div><label>Type</label>
         <select name="type">
-          <option value="game">Game</option>
           <option value="practice">Practice</option>
+          <option value="conditioning">Conditioning</option>
+          <option value="weights">Weights</option>
+          <option value="meal">Meal</option>
+          <option value="study_hall">Study Hall</option>
+          <option value="meeting">Meeting</option>
+          <option value="game">Game</option>
           <option value="travel">Travel</option>
           <option value="other">Other</option>
         </select>
       </div>
-      <div><label>Title</label><input name="title" required placeholder="e.g. vs Eagles"></div>
+      <div><label>Title</label><input name="title" required placeholder="e.g. Weights, Small Group"></div>
       <div><label>Date</label><input type="date" name="event_date" required></div>
-      <div><label>Time</label><input type="time" name="event_time"></div>
+      <div><label>Start time</label><input type="time" name="event_time"></div>
+      <div><label>End time</label><input type="time" name="event_time_end"></div>
       <div><label>Location</label><input name="location"></div>
       <div><label>Opponent</label><input name="opponent"></div>
     </div>
-    <div class="form-grid wide"><div><label>Notes</label><textarea name="notes"></textarea></div></div>
+    <div class="form-grid wide"><div><label>Notes</label><textarea name="notes" placeholder="Who's involved, details..."></textarea></div></div>
     <button type="submit">Add event</button>
   </form>
 </div>
 
 <div class="panel">
-  <h3>All events ({{ events|length }})</h3>
-  {% if events %}
-  <table>
-    <tr><th>Date</th><th>Type</th><th>Title</th><th>Opponent</th><th>Location</th></tr>
-    {% for e in events %}
-    <tr onclick="location.href='/schedule/{{ e.id }}'" style="cursor:pointer">
-      <td>{{ e.event_date }}{% if e.event_time %} {{ e.event_time }}{% endif %}</td>
-      <td><span class="badge {{ e.type }}">{{ e.type }}</span></td>
-      <td>{{ e.title }}</td>
-      <td>{{ e.opponent or '—' }}</td>
-      <td>{{ e.location or '—' }}</td>
-    </tr>
-    {% endfor %}
-  </table>
-  {% else %}
-  <div class="empty">No events yet.</div>
+  <div class="actions-row">
+    <a href="/schedule?week={{ prev_week }}">&larr; Previous week</a>
+    <h3 style="margin:0">{{ week_label }}{% if is_current_week %} <span class="small">(current week)</span>{% endif %}</h3>
+    <a href="/schedule?week={{ next_week }}">Next week &rarr;</a>
+  </div>
+
+  {% if not is_current_week %}
+  <p class="small"><a href="/schedule?week={{ this_week }}">Jump to current week</a></p>
   {% endif %}
+
+  {% for day in days %}
+  <div class="day-block{{ ' is-today' if day.is_today }}">
+    <h3>{{ day.label }}{% if day.is_today %} <span class="small">(today)</span>{% endif %}</h3>
+    {% if day.events %}
+    <table>
+      <tr><th>Time</th><th>Type</th><th>Event</th><th>Location</th></tr>
+      {% for e in day.events %}
+      <tr onclick="location.href='/schedule/{{ e.id }}'" style="cursor:pointer">
+        <td>{{ e.event_time|fmt_time or '—' }}{% if e.event_time_end %} – {{ e.event_time_end|fmt_time }}{% endif %}</td>
+        <td><span class="badge {{ e.type }}">{{ e.type.replace('_', ' ')|title }}</span></td>
+        <td>{{ e.title }}{% if e.opponent %} vs {{ e.opponent }}{% endif %}</td>
+        <td>{{ e.location or '—' }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% else %}
+    <div class="empty">Nothing scheduled.</div>
+    {% endif %}
+  </div>
+  {% endfor %}
 </div>
 {% endblock %}

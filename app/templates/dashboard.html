@@ -5,7 +5,7 @@
 
 <div class="grid">
   <div class="stat-card"><div class="num">{{ counts.players }}</div><div class="label">Players on roster</div></div>
-  <div class="stat-card"><div class="num">{{ counts.upcoming_events }}</div><div class="label">Upcoming events</div></div>
+  <div class="stat-card"><div class="num">{{ counts.today_events }}</div><div class="label">Events today</div></div>
   <div class="stat-card"><div class="num">{{ counts.open_tasks }}</div><div class="label">Open tasks</div></div>
   <div class="stat-card"><div class="num">{{ injured|length }}</div><div class="label">Players not active</div></div>
 </div>
@@ -22,22 +22,37 @@
 {% endif %}
 
 <div class="panel">
-  <h3>Upcoming schedule</h3>
-  {% if upcoming %}
+  <h3>What's next</h3>
+  {% if next_event %}
+  <div class="next-event" onclick="location.href='/schedule/{{ next_event.id }}'" style="cursor:pointer">
+    <div class="next-event-time">{{ next_event_label }}</div>
+    <div class="next-event-title">
+      <span class="badge {{ next_event.type }}">{{ next_event.type.replace('_', ' ')|title }}</span>
+      {{ next_event.title }}{% if next_event.opponent %} vs {{ next_event.opponent }}{% endif %}
+    </div>
+    {% if next_event.location %}<div class="small">{{ next_event.location }}</div>{% endif %}
+  </div>
+  {% else %}
+  <div class="empty">Nothing upcoming. <a href="/schedule">Add to the schedule</a>.</div>
+  {% endif %}
+</div>
+
+<div class="panel">
+  <h3>Today's schedule</h3>
+  {% if today_events %}
   <table>
-    <tr><th>Date</th><th>Type</th><th>Title</th><th>Opponent</th><th>Location</th></tr>
-    {% for e in upcoming %}
-    <tr onclick="location.href='/schedule/{{ e.id }}'" style="cursor:pointer">
-      <td>{{ e.event_date }}{% if e.event_time %} {{ e.event_time }}{% endif %}</td>
-      <td><span class="badge {{ e.type }}">{{ e.type }}</span></td>
-      <td>{{ e.title }}</td>
-      <td>{{ e.opponent or '—' }}</td>
-      <td>{{ e.location or '—' }}</td>
+    <tr><th>Time</th><th>Type</th><th>Event</th><th>Location</th></tr>
+    {% for row in today_events %}
+    <tr class="{{ row.status }}" onclick="location.href='/schedule/{{ row.event.id }}'" style="cursor:pointer">
+      <td>{{ row.event.event_time|fmt_time or '—' }}{% if row.event.event_time_end %} – {{ row.event.event_time_end|fmt_time }}{% endif %}</td>
+      <td><span class="badge {{ row.event.type }}">{{ row.event.type.replace('_', ' ')|title }}</span></td>
+      <td>{{ row.event.title }}</td>
+      <td>{{ row.event.location or '—' }}</td>
     </tr>
     {% endfor %}
   </table>
   {% else %}
-  <div class="empty">No upcoming events. <a href="/schedule">Add one</a>.</div>
+  <div class="empty">Nothing scheduled today. <a href="/schedule">Add to the schedule</a>.</div>
   {% endif %}
 </div>
 

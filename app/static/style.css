@@ -305,6 +305,11 @@ button.danger:hover { background: rgba(228,84,74,.12); }
 .badge.questionable { background: rgba(224,178,63,.15); color: var(--warn); }
 .badge.game { background: rgba(0,103,197,.18); color: #4fa8e0; }
 .badge.practice { background: rgba(90,201,229,.15); color: #5ac9e5; }
+.badge.conditioning { background: rgba(224,178,63,.15); color: var(--warn); }
+.badge.weights { background: rgba(167,139,250,.15); color: #a78bfa; }
+.badge.meal { background: rgba(242,166,90,.15); color: #f2a65a; }
+.badge.study_hall { background: rgba(56,189,248,.15); color: #38bdf8; }
+.badge.meeting { background: rgba(244,114,182,.15); color: #f472b6; }
 .badge.travel { background: rgba(0,173,77,.15); color: var(--ok); }
 .badge.other { background: var(--panel-hover); color: var(--muted); }
 
@@ -323,6 +328,35 @@ button.danger:hover { background: rgba(228,84,74,.12); }
   font-weight: 600;
 }
 
+.next-event {
+  background: var(--panel-hover);
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  padding: 14px 16px;
+  transition: border-color var(--dur-base) var(--ease-standard),
+              transform var(--dur-base) var(--ease-out);
+}
+
+.next-event:hover { transform: translateY(-2px); }
+
+.next-event-time {
+  color: var(--accent-hover);
+  font-weight: 700;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: .03em;
+  margin-bottom: 6px;
+}
+
+.next-event-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 17px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
 .actions-row {
   display: flex;
   justify-content: space-between;
@@ -331,6 +365,22 @@ button.danger:hover { background: rgba(228,84,74,.12); }
 }
 
 .small { font-size: 12.5px; color: var(--muted); }
+
+.day-block {
+  margin-top: 24px;
+  padding-top: 4px;
+}
+
+.day-block.is-today {
+  border-left: 3px solid var(--accent);
+  padding-left: 14px;
+  margin-left: -14px;
+}
+
+.day-block.is-today h3 { color: var(--text); }
+
+tr.current td { background: rgba(0,173,77,.12); }
+tr.past td { opacity: .5; }
 
 .stats-table input { padding: 5px 6px; font-size: 13px; }
 .stats-table th, .stats-table td { padding: 6px 6px; }

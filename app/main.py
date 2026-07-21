@@ -64,16 +64,61 @@ def _fmt_birthday(iso_str):
 templates.env.filters["fmt_birthday"] = _fmt_birthday
 
 
+def _fmt_time(hhmm):
+    if not hhmm:
+        return None
+    try:
+        return datetime.strptime(hhmm, "%H:%M").strftime("%I:%M %p").lstrip("0")
+    except ValueError:
+        return hhmm
+
+
+templates.env.filters["fmt_time"] = _fmt_time
+
+
 # ---------- Dashboard ----------
 
 @app.get("/")
 def dashboard(request: Request):
     conn = db.get_connection()
     today = date.today().isoformat()
-    upcoming = conn.execute(
-        "SELECT * FROM events WHERE event_date >= ? ORDER BY event_date, event_time LIMIT 5",
+    now_time = datetime.now().strftime("%H:%M")
+
+    today_rows = conn.execute(
+        "SELECT * FROM events WHERE event_date = ? ORDER BY (event_time IS NULL), event_time",
         (today,),
     ).fetchall()
+    today_events = []
+    for e in today_rows:
+        status = None
+        if e["event_time"]:
+            end = e["event_time_end"] or e["event_time"]
+            if now_time < e["event_time"]:
+                status = "upcoming"
+            elif now_time > end:
+                status = "past"
+            else:
+                status = "current"
+        today_events.append({"event": e, "status": status})
+
+    next_event = conn.execute(
+        """SELECT * FROM events
+           WHERE event_time IS NOT NULL
+             AND (event_date > ? OR (event_date = ? AND event_time > ?))
+           ORDER BY event_date, event_time LIMIT 1""",
+        (today, today, now_time),
+    ).fetchone()
+    next_event_label = None
+    if next_event:
+        ev_date = datetime.strptime(next_event["event_date"], "%Y-%m-%d").date()
+        if ev_date == date.today():
+            when = "Today"
+        elif ev_date == date.today() + timedelta(days=1):
+            when = "Tomorrow"
+        else:
+            when = f"{ev_date.strftime('%a')} {ev_date.month}/{ev_date.day}"
+        next_event_label = f"{when} at {_fmt_time(next_event['event_time'])}"
+
     open_tasks = conn.execute(
         "SELECT * FROM tasks WHERE done = 0 ORDER BY (due_date IS NULL), due_date LIMIT 8"
     ).fetchall()
@@ -82,9 +127,7 @@ def dashboard(request: Request):
     ).fetchall()
     counts = {
         "players": conn.execute("SELECT COUNT(*) c FROM players").fetchone()["c"],
-        "upcoming_events": conn.execute(
-            "SELECT COUNT(*) c FROM events WHERE event_date >= ?", (today,)
-        ).fetchone()["c"],
+        "today_events": len(today_events),
         "open_tasks": conn.execute("SELECT COUNT(*) c FROM tasks WHERE done = 0").fetchone()["c"],
     }
 
@@ -114,7 +157,9 @@ def dashboard(request: Request):
         "dashboard.html",
         {
             "request": request,
-            "upcoming": upcoming,
+            "today_events": today_events,
+            "next_event": next_event,
+            "next_event_label": next_event_label,
             "open_tasks": open_tasks,
             "injured": injured,
             "counts": counts,
@@ -205,12 +250,54 @@ def delete_player(player_id: int):
 # ---------- Schedule / Events ----------
 
 @app.get("/schedule")
-def list_schedule(request: Request):
+def list_schedule(request: Request, week: str = ""):
+    today = date.today()
+    if week:
+        try:
+            requested = datetime.strptime(week, "%Y-%m-%d").date()
+        except ValueError:
+            requested = today
+    else:
+        requested = today
+    wk_start = _week_start(requested)
+    week_dates = [wk_start + timedelta(days=i) for i in range(7)]
+    wk_end = week_dates[-1]
+    week_label = f"{wk_start.strftime('%b')} {wk_start.day} – {wk_end.strftime('%b')} {wk_end.day}, {wk_end.year}"
+
     conn = db.get_connection()
-    events = conn.execute("SELECT * FROM events ORDER BY event_date, event_time").fetchall()
+    rows = conn.execute(
+        """SELECT * FROM events WHERE event_date BETWEEN ? AND ?
+           ORDER BY event_date, (event_time IS NULL), event_time""",
+        (week_dates[0].isoformat(), wk_end.isoformat()),
+    ).fetchall()
     conn.close()
+
+    by_date: dict[str, list] = {}
+    for r in rows:
+        by_date.setdefault(r["event_date"], []).append(r)
+
+    days = [
+        {
+            "date": d,
+            "label": f"{d.strftime('%a')} {d.month}/{d.day}",
+            "events": by_date.get(d.isoformat(), []),
+            "is_today": d == today,
+        }
+        for d in week_dates
+    ]
+
     return templates.TemplateResponse(
-        request, "schedule.html", {"events": events, "active": "schedule"}
+        request,
+        "schedule.html",
+        {
+            "days": days,
+            "week_label": week_label,
+            "prev_week": (wk_start - timedelta(days=7)).isoformat(),
+            "next_week": (wk_start + timedelta(days=7)).isoformat(),
+            "this_week": _week_start(today).isoformat(),
+            "is_current_week": wk_start == _week_start(today),
+            "active": "schedule",
+        },
     )
 
 
@@ -220,19 +307,20 @@ def create_event(
     title: str = Form(...),
     event_date: str = Form(...),
     event_time: str = Form(""),
+    event_time_end: str = Form(""),
     location: str = Form(""),
     opponent: str = Form(""),
     notes: str = Form(""),
 ):
     conn = db.get_connection()
     conn.execute(
-        """INSERT INTO events (type, title, event_date, event_time, location, opponent, notes)
-           VALUES (?, ?, ?, ?, ?, ?, ?)""",
-        (type, title, event_date, event_time, location, opponent, notes),
+        """INSERT INTO events (type, title, event_date, event_time, event_time_end, location, opponent, notes)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        (type, title, event_date, event_time or None, event_time_end or None, location, opponent, notes),
     )
     conn.commit()
     conn.close()
-    return RedirectResponse("/schedule", status_code=303)
+    return RedirectResponse(f"/schedule?week={_week_start(datetime.strptime(event_date, '%Y-%m-%d').date()).isoformat()}", status_code=303)
 
 
 @app.get("/schedule/{event_id}")
@@ -270,15 +358,16 @@ def edit_event(
     title: str = Form(...),
     event_date: str = Form(...),
     event_time: str = Form(""),
+    event_time_end: str = Form(""),
     location: str = Form(""),
     opponent: str = Form(""),
     notes: str = Form(""),
 ):
     conn = db.get_connection()
     conn.execute(
-        """UPDATE events SET type=?, title=?, event_date=?, event_time=?, location=?, opponent=?, notes=?
+        """UPDATE events SET type=?, title=?, event_date=?, event_time=?, event_time_end=?, location=?, opponent=?, notes=?
            WHERE id=?""",
-        (type, title, event_date, event_time, location, opponent, notes, event_id),
+        (type, title, event_date, event_time or None, event_time_end or None, location, opponent, notes, event_id),
     )
     conn.commit()
     conn.close()
@@ -288,10 +377,12 @@ def edit_event(
 @app.post("/schedule/{event_id}/delete")
 def delete_event(event_id: int):
     conn = db.get_connection()
+    row = conn.execute("SELECT event_date FROM events WHERE id = ?", (event_id,)).fetchone()
     conn.execute("DELETE FROM events WHERE id = ?", (event_id,))
     conn.commit()
     conn.close()
-    return RedirectResponse("/schedule", status_code=303)
+    week = _week_start(datetime.strptime(row["event_date"], "%Y-%m-%d").date()).isoformat() if row else ""
+    return RedirectResponse(f"/schedule?week={week}", status_code=303)
 
 
 @app.post("/schedule/{event_id}/stats")
@@ -589,3 +680,82 @@ async def save_shot_logs(request: Request):
     conn.commit()
     conn.close()
     return RedirectResponse(f"/threehundred?week={week}", status_code=303)
+
+
+# ---------- One-time import: this week's schedule from the PDF ----------
+# Source: "Monday, July 20th - Sunday, July 26th .pdf" (Men's Basketball Weekly Schedule)
+# (type, title, event_date, event_time, event_time_end, location, notes)
+# Remove this route after running it once.
+
+WEEKLY_SCHEDULE_IMPORT = [
+    ("meal", "Breakfast", "2026-07-20", "08:00", "08:15", None, "Full Team"),
+    ("conditioning", "Conditioning", "2026-07-20", "08:30", None, "Field House", "Full Team"),
+    ("other", "Women's Team in the weight room", "2026-07-20", "09:00", "10:00", "Weight Room", None),
+    ("weights", "Weights", "2026-07-20", "10:00", None, None, "Full Team"),
+    ("other", "Women's Team on the court", "2026-07-20", "10:00", "12:00", "Court", None),
+    ("meal", "Lunch", "2026-07-20", "12:30", "12:50", "Dining Hall", "Full Team"),
+    ("study_hall", "Study Hall (CCH)", "2026-07-20", "13:00", "14:00", "CCH", "DJ, Isaiah, Daniel, Khi"),
+    ("practice", "Small Group", "2026-07-20", "14:30", None, None, "Dan, Foon, Bin, Beau, Winston, Sebastian, Cedric, Jordan"),
+    ("practice", "Small Group", "2026-07-20", "15:30", None, None, "Jamal, Khi, CJ, Isaiah, Bryson, Jacori, DJ, Daniel"),
+
+    ("meal", "Breakfast", "2026-07-21", "08:00", "08:15", None, "Full Team"),
+    ("conditioning", "Conditioning", "2026-07-21", "08:30", None, "Field House", "Full Team"),
+    ("weights", "Weights", "2026-07-21", "09:00", None, None, "Full Team"),
+    ("other", "Women's Team on the court", "2026-07-21", "10:00", "12:00", "Court", None),
+    ("meal", "Lunch", "2026-07-21", "12:30", "12:50", "Dining Hall", "Full Team"),
+    ("study_hall", "Study Hall (CCH)", "2026-07-21", "13:00", "14:00", "CCH", "DJ, Isaiah, Daniel, Khi"),
+    ("practice", "Small Group", "2026-07-21", "14:30", None, None, "Dan, Foon, Bin, Beau, Winston, Sebastian, Cedric, Jordan"),
+    ("practice", "Small Group", "2026-07-21", "15:30", None, None, "Jamal, Khi, CJ, Isaiah, Bryson, Jacori, DJ, Daniel"),
+
+    ("other", "Women's Team in the weight room", "2026-07-22", "09:00", "10:00", "Weight Room", None),
+    ("other", "Women's Team on the court", "2026-07-22", "10:00", "12:00", "Court", None),
+    ("meal", "Lunch", "2026-07-22", "12:30", "12:50", "Dining Hall", "Full Team"),
+    ("study_hall", "Study Hall (CCH)", "2026-07-22", "13:30", "14:30", "CCH", "DJ, Isaiah, Daniel, Khi"),
+    ("other", "Team Arrives at Field House", "2026-07-22", "16:45", None, "Field House", "Full Team"),
+    ("meeting", "Meet and Greet", "2026-07-22", "17:00", None, "Field House", "Full Team"),
+    ("practice", "Open Practice Program (1 Hour of Basketball)", "2026-07-22", "17:30", "18:30", "Field House", "Full Team"),
+    ("meeting", "Mingle with Guest", "2026-07-22", "18:45", None, "Field House", "Full Team"),
+
+    ("conditioning", "Conditioning", "2026-07-23", "07:00", None, "Soccer Field", "Full Team"),
+    ("other", "Women's Team in the weight room", "2026-07-23", "09:00", "10:00", "Weight Room", None),
+    ("weights", "Weights", "2026-07-23", "10:00", None, None, "Full Team"),
+    ("other", "Women's Team on the court", "2026-07-23", "10:00", "12:00", "Court", None),
+    ("meal", "Lunch", "2026-07-23", "12:30", "12:50", "Dining Hall", "Full Team"),
+    ("study_hall", "Study Hall (CCH)", "2026-07-23", "13:00", "14:00", "CCH", "DJ, Isaiah, Daniel, Khi"),
+    ("practice", "Small Group", "2026-07-23", "14:30", None, None, "Dan, Foon, Bin, Beau, Winston, Sebastian, Cedric, Jordan"),
+    ("practice", "Small Group", "2026-07-23", "15:30", None, None, "Jamal, Khi, CJ, Isaiah, Bryson, Jacori, DJ, Daniel"),
+
+    ("conditioning", "Conditioning", "2026-07-24", "06:00", None, "Dugan Soccer Field", "Full Team"),
+    ("meal", "TACOS!!!!", "2026-07-24", "06:30", None, None, None),
+    ("other", "Women's Volleyball Camp in Field House", "2026-07-24", "07:00", "17:00", "Field House", None),
+    ("study_hall", "Study Hall – If Necessary", "2026-07-24", "10:00", None, None, None),
+    ("meeting", "Life Skills Event", "2026-07-24", "11:00", None, "UC 320", "Full Team"),
+    ("meal", "Lunch", "2026-07-24", "12:30", "12:50", "Dining Hall", "Full Team"),
+    ("other", "Team Activity - TBD", "2026-07-24", "13:00", None, None, None),
+
+    ("other", "OFF DAY", "2026-07-25", None, None, None, None),
+    ("other", "Women's Volleyball Camp in Field House", "2026-07-25", "07:00", "17:00", "Field House", None),
+
+    ("other", "OFF DAY", "2026-07-26", None, None, None, None),
+    ("other", "Women's Volleyball Camp in Field House", "2026-07-26", "07:00", "17:00", "Field House", None),
+    ("practice", "Open Gym", "2026-07-26", "17:30", None, None, None),
+    ("study_hall", "Study Hall – If Necessary", "2026-07-26", "19:00", None, None, None),
+]
+
+
+@app.get("/admin/import-weekly-schedule")
+def import_weekly_schedule():
+    conn = db.get_connection()
+    for event_type, title, event_date, event_time, event_time_end, location, notes in WEEKLY_SCHEDULE_IMPORT:
+        conn.execute(
+            """INSERT INTO events (type, title, event_date, event_time, event_time_end, location, notes)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (event_type, title, event_date, event_time, event_time_end, location, notes),
+        )
+    conn.commit()
+    conn.close()
+    return Response(
+        f"Weekly schedule import complete. {len(WEEKLY_SCHEDULE_IMPORT)} events added for Jul 20-26, 2026.\n"
+        "Check /schedule and the dashboard.",
+        media_type="text/plain",
+    )
