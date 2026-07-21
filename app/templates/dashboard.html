@@ -3,38 +3,68 @@
 {% block content %}
 <h1>Dashboard</h1>
 
+<div class="dash-top">
+  <div class="panel dash-todo">
+    <h3>✅ To-Do</h3>
+    {% if open_tasks %}
+    <table>
+      <tr><th></th><th>Priority</th><th>Title</th><th>For</th><th>Due</th></tr>
+      {% for t in open_tasks %}
+      <tr>
+        <td class="check-cell">
+          <form method="post" action="/tasks/{{ t.id }}/toggle">
+            <input type="hidden" name="next" value="/">
+            <input type="checkbox" onchange="this.form.submit()" aria-label="Complete {{ t.title }}">
+          </form>
+        </td>
+        <td><span class="prio prio-{{ t.priority or 3 }}">P{{ t.priority or 3 }}</span></td>
+        <td>{{ t.title }}</td>
+        <td>{{ t.assignee or '—' }}</td>
+        <td>{{ t.due_date or '—' }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    <p class="small" style="margin-bottom:0"><a href="/tasks">Open the full list →</a></p>
+    {% else %}
+    <div class="empty">Nothing on the list. <a href="/tasks">Add a to-do</a>.</div>
+    {% endif %}
+  </div>
+
+  <div class="dash-side">
+    <div class="panel">
+      <h3>What's next</h3>
+      {% if next_event %}
+      <div class="next-event" onclick="location.href='/schedule/{{ next_event.id }}'" style="cursor:pointer">
+        <div class="next-event-time">{{ next_event_label }}</div>
+        <div class="next-event-title">
+          <span class="badge {{ next_event.type }}">{{ next_event.type.replace('_', ' ')|title }}</span>
+          {{ next_event.title }}{% if next_event.opponent %} vs {{ next_event.opponent }}{% endif %}
+        </div>
+        {% if next_event.location %}<div class="small">{{ next_event.location }}</div>{% endif %}
+      </div>
+      {% else %}
+      <div class="empty">Nothing upcoming. <a href="/schedule">Add to the schedule</a>.</div>
+      {% endif %}
+    </div>
+
+    {% if upcoming_birthdays %}
+    <div class="panel">
+      <h3>🎂 Upcoming birthdays</h3>
+      <div class="birthday-row">
+        {% for b in upcoming_birthdays %}
+        <span class="birthday-pill">{{ b }}</span>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
 <div class="grid">
   <div class="stat-card"><div class="num">{{ counts.players }}</div><div class="label">Players on roster</div></div>
   <div class="stat-card"><div class="num">{{ counts.today_events }}</div><div class="label">Events today</div></div>
-  <div class="stat-card"><div class="num">{{ counts.open_tasks }}</div><div class="label">Open tasks</div></div>
+  <div class="stat-card"><div class="num">{{ counts.open_tasks }}</div><div class="label">Open to-dos</div></div>
   <div class="stat-card"><div class="num">{{ injured|length }}</div><div class="label">Players not active</div></div>
-</div>
-
-{% if upcoming_birthdays %}
-<div class="panel">
-  <h3>🎂 Upcoming birthdays</h3>
-  <div class="birthday-row">
-    {% for b in upcoming_birthdays %}
-    <span class="birthday-pill">{{ b }}</span>
-    {% endfor %}
-  </div>
-</div>
-{% endif %}
-
-<div class="panel">
-  <h3>What's next</h3>
-  {% if next_event %}
-  <div class="next-event" onclick="location.href='/schedule/{{ next_event.id }}'" style="cursor:pointer">
-    <div class="next-event-time">{{ next_event_label }}</div>
-    <div class="next-event-title">
-      <span class="badge {{ next_event.type }}">{{ next_event.type.replace('_', ' ')|title }}</span>
-      {{ next_event.title }}{% if next_event.opponent %} vs {{ next_event.opponent }}{% endif %}
-    </div>
-    {% if next_event.location %}<div class="small">{{ next_event.location }}</div>{% endif %}
-  </div>
-  {% else %}
-  <div class="empty">Nothing upcoming. <a href="/schedule">Add to the schedule</a>.</div>
-  {% endif %}
 </div>
 
 <div class="panel">
@@ -53,20 +83,6 @@
   </table>
   {% else %}
   <div class="empty">Nothing scheduled today. <a href="/schedule">Add to the schedule</a>.</div>
-  {% endif %}
-</div>
-
-<div class="panel">
-  <h3>Open tasks</h3>
-  {% if open_tasks %}
-  <table>
-    <tr><th>Title</th><th>Due</th></tr>
-    {% for t in open_tasks %}
-    <tr><td>{{ t.title }}</td><td>{{ t.due_date or '—' }}</td></tr>
-    {% endfor %}
-  </table>
-  {% else %}
-  <div class="empty">No open tasks. <a href="/tasks">Add one</a>.</div>
   {% endif %}
 </div>
 

@@ -1,34 +1,80 @@
 {% extends "base.html" %}
-{% block title %}Tasks · Team Ops{% endblock %}
+{% block title %}To-Do · Team Ops{% endblock %}
 {% block content %}
-<h1>Tasks</h1>
-<p class="small">Catch-all for anything you need to track — equipment orders, paperwork, phone calls, reminders.</p>
+<h1>To-Do</h1>
 
 <div class="panel">
-  <h3>Add task</h3>
-  <form method="post" action="/tasks/new">
-    <div class="form-grid">
-      <div><label>Title</label><input name="title" required></div>
-      <div><label>Due date</label><input type="date" name="due_date"></div>
+  <h3>New to-do — who's it for?</h3>
+  <div class="assignee-group">
+    <span class="assignee-label">Coaches</span>
+    <div class="assignee-row">
+      {% for c in coaches %}
+      <button type="button" class="assignee-btn" data-assignee="{{ c }}">{{ c }} <span class="plus">+</span></button>
+      {% endfor %}
     </div>
-    <div class="form-grid wide"><div><label>Description</label><textarea name="description"></textarea></div></div>
-    <button type="submit">Add task</button>
+  </div>
+  <div class="assignee-group">
+    <span class="assignee-label">Staff</span>
+    <div class="assignee-row">
+      {% for s in staff %}
+      <button type="button" class="assignee-btn" data-assignee="{{ s }}">{{ s }} <span class="plus">+</span></button>
+      {% endfor %}
+      <div class="assignee-select-wrap">
+        <button type="button" class="assignee-btn" id="manager-btn">Manager <span class="plus">+</span></button>
+        <select id="manager-select" class="assignee-select" size="{{ managers|length }}" hidden>
+          {% for m in managers %}<option value="{{ m }}">{{ m }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="assignee-select-wrap">
+        <button type="button" class="assignee-btn" id="player-btn">Player <span class="plus">+</span></button>
+        <select id="player-select" class="assignee-select" size="{{ [players|length, 8]|min }}" hidden>
+          {% for p in players %}<option value="{{ p }}">{{ p }}</option>{% endfor %}
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <form method="post" action="/tasks/new" id="todo-form" hidden>
+    <div class="todo-form-heading">New to-do for <strong id="todo-form-assignee-name"></strong></div>
+    <input type="hidden" name="assignee" id="assignee-input">
+    <div class="form-grid">
+      <div><label>Title</label><input name="title" id="todo-title" required></div>
+      <div><label>Priority (1 = highest)</label>
+        <select name="priority">
+          <option value="1">1 — Urgent</option>
+          <option value="2">2 — High</option>
+          <option value="3" selected>3 — Normal</option>
+          <option value="4">4 — Low</option>
+          <option value="5">5 — Whenever</option>
+        </select>
+      </div>
+      <div><label>Due date</label><input type="date" name="due_date" id="todo-due"></div>
+    </div>
+    <div class="form-grid wide"><div><label>Notes (optional)</label><textarea name="description"></textarea></div></div>
+    <label class="check-row"><input type="checkbox" name="add_to_schedule" value="1" id="todo-schedule"> Also add to the schedule (needs a due date)</label>
+    <div style="margin-top:14px">
+      <button type="submit">Add to-do</button>
+      <button type="button" class="secondary" id="todo-cancel" style="margin-left:8px">Cancel</button>
+    </div>
   </form>
 </div>
 
 <div class="panel">
-  <h3>All tasks ({{ tasks|length }})</h3>
-  {% if tasks %}
+  <h3>Open to-dos ({{ todos|length }})</h3>
+  {% if todos %}
   <table>
-    <tr><th></th><th>Title</th><th>Due</th><th>Description</th><th></th></tr>
-    {% for t in tasks %}
+    <tr><th></th><th>Priority</th><th>Title</th><th>For</th><th>Due</th><th>Notes</th><th></th></tr>
+    {% for t in todos %}
     <tr>
-      <td>
+      <td class="check-cell">
         <form method="post" action="/tasks/{{ t.id }}/toggle">
-          <input type="checkbox" onchange="this.form.submit()" {{ 'checked' if t.done }} style="width:auto">
+          <input type="hidden" name="next" value="/tasks">
+          <input type="checkbox" onchange="this.form.submit()" aria-label="Complete {{ t.title }}">
         </form>
       </td>
-      <td style="{{ 'text-decoration:line-through;color:var(--muted)' if t.done }}">{{ t.title }}</td>
+      <td><span class="prio prio-{{ t.priority or 3 }}">P{{ t.priority or 3 }}</span></td>
+      <td>{{ t.title }}</td>
+      <td>{{ t.assignee or '—' }}</td>
       <td>{{ t.due_date or '—' }}</td>
       <td class="small">{{ t.description or '—' }}</td>
       <td>
@@ -40,7 +86,80 @@
     {% endfor %}
   </table>
   {% else %}
-  <div class="empty">No tasks yet.</div>
+  <div class="empty">Nothing on the list. Pick a person above to add one.</div>
   {% endif %}
 </div>
+
+<div class="panel graveyard">
+  <h3>🪦 Task Graveyard — {{ graveyard|length }} laid to rest</h3>
+  {% if graveyard %}
+  <table>
+    <tr><th></th><th>Title</th><th>Was for</th><th>Completed</th><th></th></tr>
+    {% for t in graveyard %}
+    <tr class="grave-row">
+      <td>🪦</td>
+      <td class="grave-title">{{ t.title }}</td>
+      <td>{{ t.assignee or '—' }}</td>
+      <td class="small">{{ t.completed_at|fmt_dt or '—' }}</td>
+      <td>
+        <form class="inline" method="post" action="/tasks/{{ t.id }}/toggle">
+          <input type="hidden" name="next" value="/tasks">
+          <button type="submit" class="secondary" style="padding:4px 10px;font-size:12px">Revive</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <div class="empty">No tasks buried yet. Complete one and it'll rest here.</div>
+  {% endif %}
+</div>
+
+<script>
+(function () {
+  const form = document.getElementById('todo-form');
+  const nameEl = document.getElementById('todo-form-assignee-name');
+  const assigneeInput = document.getElementById('assignee-input');
+  const titleInput = document.getElementById('todo-title');
+  const managerSelect = document.getElementById('manager-select');
+  const playerSelect = document.getElementById('player-select');
+
+  function chooseAssignee(name, btn) {
+    assigneeInput.value = name;
+    nameEl.textContent = name;
+    form.hidden = false;
+    document.querySelectorAll('.assignee-btn').forEach(b => b.classList.remove('selected'));
+    if (btn) btn.classList.add('selected');
+    managerSelect.hidden = true;
+    playerSelect.hidden = true;
+    form.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    titleInput.focus();
+  }
+
+  document.querySelectorAll('.assignee-btn[data-assignee]').forEach(btn => {
+    btn.addEventListener('click', () => chooseAssignee(btn.dataset.assignee, btn));
+  });
+
+  document.getElementById('manager-btn').addEventListener('click', () => {
+    playerSelect.hidden = true;
+    managerSelect.hidden = !managerSelect.hidden;
+  });
+  document.getElementById('player-btn').addEventListener('click', () => {
+    managerSelect.hidden = true;
+    playerSelect.hidden = !playerSelect.hidden;
+  });
+  managerSelect.addEventListener('change', () => chooseAssignee(managerSelect.value, document.getElementById('manager-btn')));
+  playerSelect.addEventListener('change', () => chooseAssignee(playerSelect.value, document.getElementById('player-btn')));
+
+  document.getElementById('todo-cancel').addEventListener('click', () => {
+    form.hidden = true;
+    document.querySelectorAll('.assignee-btn').forEach(b => b.classList.remove('selected'));
+  });
+
+  // If "add to schedule" is checked, a due date becomes required
+  const scheduleBox = document.getElementById('todo-schedule');
+  const dueInput = document.getElementById('todo-due');
+  scheduleBox.addEventListener('change', () => { dueInput.required = scheduleBox.checked; });
+})();
+</script>
 {% endblock %}

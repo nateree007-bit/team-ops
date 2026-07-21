@@ -72,6 +72,9 @@ CREATE TABLE IF NOT EXISTS tasks (
     description TEXT,
     due_date TEXT,
     done INTEGER NOT NULL DEFAULT 0,
+    assignee TEXT,
+    priority INTEGER DEFAULT 3,
+    completed_at TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 """
@@ -95,6 +98,13 @@ def init_db():
         event_columns = {row["name"] for row in conn.execute("PRAGMA table_info(events)")}
         if "event_time_end" not in event_columns:
             conn.execute("ALTER TABLE events ADD COLUMN event_time_end TEXT")
+        task_columns = {row["name"] for row in conn.execute("PRAGMA table_info(tasks)")}
+        if "assignee" not in task_columns:
+            conn.execute("ALTER TABLE tasks ADD COLUMN assignee TEXT")
+        if "priority" not in task_columns:
+            conn.execute("ALTER TABLE tasks ADD COLUMN priority INTEGER DEFAULT 3")
+        if "completed_at" not in task_columns:
+            conn.execute("ALTER TABLE tasks ADD COLUMN completed_at TEXT")
         conn.commit()
     finally:
         conn.close()

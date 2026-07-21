@@ -94,6 +94,19 @@ def _fmt_time(hhmm):
 templates.env.filters["fmt_time"] = _fmt_time
 
 
+def _fmt_dt(iso_str):
+    if not iso_str:
+        return None
+    try:
+        dt = datetime.fromisoformat(iso_str)
+        return dt.strftime("%b %d, %I:%M %p").replace(" 0", " ")
+    except ValueError:
+        return iso_str
+
+
+templates.env.filters["fmt_dt"] = _fmt_dt
+
+
 # ---------- Dashboard ----------
 
 @app.get("/")
@@ -139,7 +152,8 @@ def dashboard(request: Request):
         next_event_label = f"{when} at {_fmt_time(next_event['event_time'])}"
 
     open_tasks = conn.execute(
-        "SELECT * FROM tasks WHERE done = 0 ORDER BY (due_date IS NULL), due_date LIMIT 8"
+        """SELECT * FROM tasks WHERE done = 0
+           ORDER BY priority, (due_date IS NULL), due_date, created_at LIMIT 10"""
     ).fetchall()
     injured = conn.execute(
         "SELECT * FROM players WHERE status != 'active' ORDER BY name"
@@ -623,43 +637,90 @@ def delete_report(report_id: int):
     return RedirectResponse("/scouting", status_code=303)
 
 
-# ---------- Tasks / Misc ----------
+# ---------- To-Do ----------
+
+COACHES = ["Shaw", "Davis", "Rencher", "Dylan", "JB", "Rob"]
+STAFF = ["Nate", "Ashley", "Soza"]
+MANAGERS = ["Tay", "Ty", "Kat", "Regan", "Joe"]
+
 
 @app.get("/tasks")
 def list_tasks(request: Request):
     conn = db.get_connection()
-    tasks = conn.execute(
-        "SELECT * FROM tasks ORDER BY done, (due_date IS NULL), due_date"
+    todos = conn.execute(
+        """SELECT * FROM tasks WHERE done = 0
+           ORDER BY priority, (due_date IS NULL), due_date, created_at"""
+    ).fetchall()
+    graveyard = conn.execute(
+        "SELECT * FROM tasks WHERE done = 1 ORDER BY completed_at DESC"
+    ).fetchall()
+    players = conn.execute(
+        "SELECT name FROM players ORDER BY name"
     ).fetchall()
     conn.close()
     return templates.TemplateResponse(
-        request, "tasks.html", {"tasks": tasks, "active": "tasks"}
+        request,
+        "tasks.html",
+        {
+            "todos": todos,
+            "graveyard": graveyard,
+            "coaches": COACHES,
+            "staff": STAFF,
+            "managers": MANAGERS,
+            "players": [p["name"] for p in players],
+            "active": "tasks",
+        },
     )
 
 
 @app.post("/tasks/new")
 def create_task(
     title: str = Form(...),
+    assignee: str = Form(...),
     description: str = Form(""),
+    priority: int = Form(3),
     due_date: str = Form(""),
+    add_to_schedule: str = Form(""),
 ):
+    priority = max(1, min(5, priority))
     conn = db.get_connection()
     conn.execute(
-        "INSERT INTO tasks (title, description, due_date) VALUES (?, ?, ?)",
-        (title, description, due_date or None),
+        "INSERT INTO tasks (title, description, due_date, assignee, priority) VALUES (?, ?, ?, ?, ?)",
+        (title, description, due_date or None, assignee, priority),
     )
+    if add_to_schedule and due_date:
+        conn.execute(
+            """INSERT INTO events (type, title, event_date, notes)
+               VALUES ('other', ?, ?, ?)""",
+            (title, due_date, f"To-do for {assignee}" + (f" — {description}" if description else "")),
+        )
     conn.commit()
     conn.close()
     return RedirectResponse("/tasks", status_code=303)
 
 
 @app.post("/tasks/{task_id}/toggle")
-def toggle_task(task_id: int):
+def toggle_task(task_id: int, next: str = Form("/tasks")):
+    if next not in ("/tasks", "/"):
+        next = "/tasks"
     conn = db.get_connection()
-    conn.execute("UPDATE tasks SET done = 1 - done WHERE id = ?", (task_id,))
+    row = conn.execute("SELECT done FROM tasks WHERE id = ?", (task_id,)).fetchone()
+    celebrating = False
+    if row:
+        if row["done"]:
+            conn.execute(
+                "UPDATE tasks SET done = 0, completed_at = NULL WHERE id = ?", (task_id,)
+            )
+        else:
+            conn.execute(
+                "UPDATE tasks SET done = 1, completed_at = ? WHERE id = ?",
+                (_now_local().isoformat(timespec="seconds"), task_id),
+            )
+            celebrating = True
     conn.commit()
     conn.close()
-    return RedirectResponse("/tasks", status_code=303)
+    suffix = ("&" if "?" in next else "?") + "celebrate=1" if celebrating else ""
+    return RedirectResponse(f"{next}{suffix}", status_code=303)
 
 
 @app.post("/tasks/{task_id}/delete")
