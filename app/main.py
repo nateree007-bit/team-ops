@@ -555,88 +555,95 @@ async def save_shot_logs(request: Request):
     return RedirectResponse(f"/threehundred?week={week}", status_code=303)
 
 
-# ---------- One-time fix: merge nickname duplicates, add Sebastian Robinson ----------
-# The earlier history import created nickname-only players instead of matching
-# the real roster entries. This merges their shot_logs into the correct full-name
-# player, deletes the nickname duplicate, and adds a missing roster player.
+# ---------- One-time import: 4 players missed on the first pass ----------
+# Source: 300_Club.xlsx (rows below where the first read stopped).
+# Day order per player is Mon,Tue,Wed,Thu,Fri,Sat,Sun.
+# None = not logged that day (no row created). 0 = explicitly logged as zero.
 # Remove this route after running it once.
 
-NICKNAME_TO_FULL_NAME = {
-    "Beau": "Beau Billingsley",
-    "Bin": "Bin Basil",
-    "Bryson": "Bryson Wheatfall",
-    "CJ": "CJ Worsham",
-    "Cedric": "Cedric Horton",
-    "DJ": "DJ Kent",
-    "Damarion": "Damarion Winston",
-    "Dan": "Dan Mukuna",
-    "Daniel": "Daniel Michelini-Jackson",
-    "Isaiah": "Isaiah Lewis",
-    "Jacori": "Jacori Jones",
-    "Jamal": "Jamal Ambrose",
+MISSING_PLAYERS_HISTORY = {
+    "2026-06-01": {  # Week 1
+        "Jordan Mizell": [None, 315, 300, 300, 310, 310, 0],
+        "Lamin Foon": [None, 323, 303, 323, 323, 302, 323],
+        "Khi Wallace": [None, 300, 300, 310, 300, 0, 0],
+        "Sebastian Robinson": [None, 300, 320, 300, 300, 300, 0],
+    },
+    "2026-06-08": {  # Week 2
+        "Jordan Mizell": [320, 350, 350, 350, 325, 0, 0],
+        "Lamin Foon": [323, 311, 323, 323, 423, 323, 0],
+        "Khi Wallace": [350, 300, 315, 310, 410, 0, 330],
+        "Sebastian Robinson": [0, 350, 300, 325, 400, 0, 0],
+    },
+    "2026-06-15": {  # Week 3
+        "Jordan Mizell": [400, 450, 200, 0, None, 450, 0],
+        "Lamin Foon": [323, 423, 423, 323, None, 323, 323],
+        "Khi Wallace": [430, 440, 320, 0, 400, 350, 0],
+        "Sebastian Robinson": [400, 400, 0, 350, 400, 350, 0],
+    },
+    "2026-06-22": {  # Week 4
+        "Jordan Mizell": [490, 310, 0, 400, 315, 400, 350],
+        "Lamin Foon": [323, 323, 323, 323, 0, 423, 323],
+        "Khi Wallace": [650, 0, 0, 475, 350, 450, 0],
+        "Sebastian Robinson": [350, 400, 350, 400, 0, 400, 300],
+    },
+    # Week of 2026-06-29 was skipped (no tracking that week).
+    "2026-07-06": {  # Week 5
+        "Jordan Mizell": [300, 0, 300, 300, 0, 330, 0],
+        "Lamin Foon": [0, 323, 323, 323, 323, 323, 0],
+        "Khi Wallace": [350, 0, 400, 350, 300, 0, 0],
+        "Sebastian Robinson": [450, 0, 300, 350, 350, 0, 0],
+    },
+    "2026-07-13": {  # Week 6
+        "Jordan Mizell": [350, 350, 0, 400, 400, 350, 350],
+        "Lamin Foon": [0, 323, 323, 0, 323, 0, 0],
+        "Khi Wallace": [350, 0, 380, 0, 345, 0, 400],
+        "Sebastian Robinson": [350, 400, 350, 0, 0, 400, 350],
+    },
 }
 
 
-@app.get("/admin/fix-300club-names")
-def fix_300club_names():
+@app.get("/admin/import-missing-300club-players")
+def import_missing_300club_players():
     conn = db.get_connection()
-    merged = []
-    skipped = []
+    not_found = []
+    rows_written = 0
+    per_player_days = {}
 
-    for nickname, full_name in NICKNAME_TO_FULL_NAME.items():
-        nick_row = conn.execute(
-            "SELECT id FROM players WHERE name = ?", (nickname,)
-        ).fetchone()
-        full_row = conn.execute(
-            "SELECT id FROM players WHERE name = ?", (full_name,)
-        ).fetchone()
+    for week_start_str, players_data in MISSING_PLAYERS_HISTORY.items():
+        wk_start = datetime.strptime(week_start_str, "%Y-%m-%d").date()
+        week_dates = [wk_start + timedelta(days=i) for i in range(7)]
 
-        if not nick_row or not full_row:
-            skipped.append(
-                f"{nickname} -> {full_name} (nickname found: {bool(nick_row)}, full name found: {bool(full_row)})"
-            )
-            continue
+        for name, days in players_data.items():
+            row = conn.execute("SELECT id FROM players WHERE name = ?", (name,)).fetchone()
+            if not row:
+                if name not in not_found:
+                    not_found.append(name)
+                continue
+            player_id = row["id"]
 
-        nick_id = nick_row["id"]
-        full_id = full_row["id"]
-
-        logs = conn.execute(
-            "SELECT log_date, makes FROM shot_logs WHERE player_id = ?", (nick_id,)
-        ).fetchall()
-        for log in logs:
-            conn.execute(
-                """INSERT INTO shot_logs (player_id, log_date, makes) VALUES (?, ?, ?)
-                   ON CONFLICT(player_id, log_date) DO UPDATE SET makes=excluded.makes""",
-                (full_id, log["log_date"], log["makes"]),
-            )
-        conn.execute("DELETE FROM players WHERE id = ?", (nick_id,))
-        merged.append(f"{nickname} -> {full_name} ({len(logs)} days moved)")
-
-    sebastian = conn.execute(
-        "SELECT id FROM players WHERE name = ?", ("Sebastian Robinson",)
-    ).fetchone()
-    if sebastian:
-        sebastian_result = "already existed, left as-is"
-    else:
-        conn.execute(
-            "INSERT INTO players (name, status) VALUES (?, 'active')",
-            ("Sebastian Robinson",),
-        )
-        sebastian_result = "created"
+            for d, makes in zip(week_dates, days):
+                if makes is None:
+                    continue
+                conn.execute(
+                    """INSERT INTO shot_logs (player_id, log_date, makes) VALUES (?, ?, ?)
+                       ON CONFLICT(player_id, log_date) DO UPDATE SET makes=excluded.makes""",
+                    (player_id, d.isoformat(), makes),
+                )
+                rows_written += 1
+                per_player_days[name] = per_player_days.get(name, 0) + 1
 
     conn.commit()
     conn.close()
 
     lines = [
-        "300 Club name fix complete.",
+        "Missing 300 Club players import complete.",
+        f"Rows written: {rows_written}",
         "",
-        "Merged (nickname -> full name):",
-        *[f"  {m}" for m in merged],
+        "Days written per player:",
+        *[f"  {name}: {count}" for name, count in sorted(per_player_days.items())],
         "",
-        f"Skipped (not found): {skipped or 'none'}",
+        f"Not found on roster (skipped): {not_found or 'none'}",
         "",
-        f"Sebastian Robinson: {sebastian_result}",
-        "",
-        "Check /players for duplicates and /threehundred for the leaderboards.",
+        "Check /threehundred all-time leaderboard and streaks.",
     ]
     return Response("\n".join(lines), media_type="text/plain")
