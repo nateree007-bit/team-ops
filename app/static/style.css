@@ -215,3 +215,9 @@ button.danger:hover { background: rgba(228,84,74,.12); }
 
 .stats-table input { padding: 5px 6px; font-size: 13px; }
 .stats-table th, .stats-table td { padding: 6px 6px; }
+
+.stats-table td.hit input {
+  border-color: var(--ok);
+  color: var(--ok);
+  font-weight: 700;
+}

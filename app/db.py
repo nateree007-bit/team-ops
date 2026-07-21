@@ -56,6 +56,14 @@ CREATE TABLE IF NOT EXISTS scouting_reports (
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS shot_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    player_id INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+    log_date TEXT NOT NULL,
+    makes INTEGER NOT NULL DEFAULT 0,
+    UNIQUE(player_id, log_date)
+);
+
 CREATE TABLE IF NOT EXISTS tasks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     title TEXT NOT NULL,

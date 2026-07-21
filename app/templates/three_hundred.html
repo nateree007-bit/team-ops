@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}300 Club · Team Ops{% endblock %}
+{% block content %}
+<h1>300 Club</h1>
+<p class="small">Daily goal: {{ goal }} makes. Enter what gets texted in each day, then save the week.</p>
+
+<div class="panel">
+  <div class="actions-row">
+    <a href="/threehundred?week={{ prev_week }}">&larr; Previous week</a>
+    <h3 style="margin:0">{{ week_label }}{% if is_current_week %} <span class="small">(current week)</span>{% endif %}</h3>
+    <a href="/threehundred?week={{ next_week }}">Next week &rarr;</a>
+  </div>
+
+  {% if not is_current_week %}
+  <p class="small"><a href="/threehundred?week={{ this_week }}">Jump to current week</a></p>
+  {% endif %}
+
+  <form method="post" action="/threehundred/save">
+    <input type="hidden" name="week" value="{{ week_dates[0].isoformat() }}">
+    <div style="overflow-x:auto">
+    <table class="stats-table">
+      <tr>
+        <th>Player</th>
+        {% for h in day_headers %}<th>{{ h }}</th>{% endfor %}
+        <th>Total</th>
+      </tr>
+      {% for row in grid %}
+      <tr>
+        <td>{{ row.player.name }}</td>
+        {% for i in range(7) %}
+        <td class="{{ 'hit' if row.days[i] is not none and row.days[i] >= goal }}">
+          <input type="number" min="0" name="makes_{{ row.player.id }}_{{ week_dates[i].isoformat() }}" value="{{ row.days[i] if row.days[i] is not none else '' }}">
+        </td>
+        {% endfor %}
+        <td><strong>{{ row.total }}</strong></td>
+      </tr>
+      {% endfor %}
+    </table>
+    </div>
+    {% if not players %}
+    <div class="empty">Add players to the roster first.</div>
+    {% else %}
+    <div style="margin-top:12px"><button type="submit">Save week</button></div>
+    {% endif %}
+  </form>
+</div>
+
+<div class="panel">
+  <h3>This week's leaderboard</h3>
+  {% if week_totals %}
+  <table>
+    <tr><th>#</th><th>Player</th><th>Makes</th></tr>
+    {% for row in week_totals %}
+    <tr>
+      <td>{{ loop.index }}</td>
+      <td>{{ row.player.name }}</td>
+      <td>{{ row.total }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <div class="empty">No players on the roster yet.</div>
+  {% endif %}
+</div>
+
+<div class="panel">
+  <h3>All-time leaderboard</h3>
+  {% if all_time %}
+  <table>
+    <tr><th>#</th><th>Player</th><th>Total makes</th></tr>
+    {% for row in all_time %}
+    <tr>
+      <td>{{ loop.index }}</td>
+      <td>{{ row.player.name }}</td>
+      <td>{{ row.total }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <div class="empty">No players on the roster yet.</div>
+  {% endif %}
+</div>
+
+<div class="panel">
+  <h3>Streaks</h3>
+  {% if streaks %}
+  <table>
+    <tr><th>#</th><th>Player</th><th>Longest streak</th><th>Current streak</th></tr>
+    {% for row in streaks %}
+    <tr>
+      <td>{{ loop.index }}</td>
+      <td>{{ row.player.name }}</td>
+      <td>{{ row.longest }} day{{ 's' if row.longest != 1 else '' }}</td>
+      <td>{{ row.current }} day{{ 's' if row.current != 1 else '' }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <div class="empty">No players on the roster yet.</div>
+  {% endif %}
+</div>
+{% endblock %}

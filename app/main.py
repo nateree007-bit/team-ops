@@ -1,7 +1,7 @@
 import base64
 import os
 import secrets
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import RedirectResponse, Response
@@ -404,3 +404,152 @@ def delete_task(task_id: int):
     conn.commit()
     conn.close()
     return RedirectResponse("/tasks", status_code=303)
+
+
+# ---------- 300 Club ----------
+
+GOAL = 300
+
+
+def _week_start(d: date) -> date:
+    return d - timedelta(days=d.weekday())
+
+
+@app.get("/threehundred")
+def three_hundred(request: Request, week: str = ""):
+    today = date.today()
+    if week:
+        try:
+            requested = datetime.strptime(week, "%Y-%m-%d").date()
+        except ValueError:
+            requested = today
+    else:
+        requested = today
+    wk_start = _week_start(requested)
+    week_dates = [wk_start + timedelta(days=i) for i in range(7)]
+    wk_end = week_dates[-1]
+    day_headers = [f"{d.strftime('%a')} {d.month}/{d.day}" for d in week_dates]
+    week_label = f"{wk_start.strftime('%b')} {wk_start.day} – {wk_end.strftime('%b')} {wk_end.day}, {wk_end.year}"
+
+    conn = db.get_connection()
+    players = conn.execute("SELECT * FROM players ORDER BY name").fetchall()
+
+    logs = conn.execute(
+        "SELECT * FROM shot_logs WHERE log_date BETWEEN ? AND ?",
+        (week_dates[0].isoformat(), wk_end.isoformat()),
+    ).fetchall()
+    log_map = {(row["player_id"], row["log_date"]): row["makes"] for row in logs}
+
+    grid = []
+    week_totals = []
+    for p in players:
+        day_values = [log_map.get((p["id"], d.isoformat())) for d in week_dates]
+        total = sum(v for v in day_values if v is not None)
+        grid.append({"player": p, "days": day_values, "total": total})
+        week_totals.append({"player": p, "total": total})
+    week_totals.sort(key=lambda x: -x["total"])
+
+    all_time_rows = conn.execute(
+        "SELECT player_id, SUM(makes) as total FROM shot_logs GROUP BY player_id"
+    ).fetchall()
+    all_time_map = {r["player_id"]: (r["total"] or 0) for r in all_time_rows}
+    all_time = sorted(
+        ({"player": p, "total": all_time_map.get(p["id"], 0)} for p in players),
+        key=lambda x: -x["total"],
+    )
+
+    all_logs = conn.execute(
+        "SELECT player_id, log_date, makes FROM shot_logs ORDER BY player_id, log_date"
+    ).fetchall()
+    by_player: dict[int, list] = {}
+    for r in all_logs:
+        by_player.setdefault(r["player_id"], []).append((r["log_date"], r["makes"]))
+
+    streaks = []
+    for p in players:
+        entries = by_player.get(p["id"], [])
+
+        longest = 0
+        run = 0
+        prev_date = None
+        for log_date_str, makes in entries:
+            d = datetime.strptime(log_date_str, "%Y-%m-%d").date()
+            hit = (makes or 0) >= GOAL
+            if hit:
+                run = run + 1 if prev_date is not None and (d - prev_date).days == 1 and run > 0 else 1
+            else:
+                run = 0
+            longest = max(longest, run)
+            prev_date = d
+
+        current = 0
+        prev_date = None
+        for log_date_str, makes in reversed(entries):
+            d = datetime.strptime(log_date_str, "%Y-%m-%d").date()
+            if (makes or 0) < GOAL:
+                break
+            if prev_date is None or (prev_date - d).days == 1:
+                current += 1
+                prev_date = d
+            else:
+                break
+
+        streaks.append({"player": p, "longest": longest, "current": current})
+    streaks.sort(key=lambda x: (-x["longest"], -x["current"]))
+
+    conn.close()
+
+    is_current_week = wk_start == _week_start(today)
+
+    return templates.TemplateResponse(
+        request,
+        "three_hundred.html",
+        {
+            "players": players,
+            "week_dates": week_dates,
+            "day_headers": day_headers,
+            "week_label": week_label,
+            "grid": grid,
+            "week_totals": week_totals,
+            "all_time": all_time,
+            "streaks": streaks,
+            "goal": GOAL,
+            "prev_week": (wk_start - timedelta(days=7)).isoformat(),
+            "next_week": (wk_start + timedelta(days=7)).isoformat(),
+            "this_week": _week_start(today).isoformat(),
+            "is_current_week": is_current_week,
+            "active": "threehundred",
+        },
+    )
+
+
+@app.post("/threehundred/save")
+async def save_shot_logs(request: Request):
+    form = await request.form()
+    week = form.get("week")
+    wk_start = datetime.strptime(week, "%Y-%m-%d").date()
+    week_dates = [wk_start + timedelta(days=i) for i in range(7)]
+
+    conn = db.get_connection()
+    players = conn.execute("SELECT id FROM players").fetchall()
+    for p in players:
+        for d in week_dates:
+            raw = form.get(f"makes_{p['id']}_{d.isoformat()}")
+            if raw is None or str(raw).strip() == "":
+                conn.execute(
+                    "DELETE FROM shot_logs WHERE player_id = ? AND log_date = ?",
+                    (p["id"], d.isoformat()),
+                )
+                continue
+            try:
+                makes = int(raw)
+            except ValueError:
+                continue
+            conn.execute(
+                """INSERT INTO shot_logs (player_id, log_date, makes) VALUES (?, ?, ?)
+                   ON CONFLICT(player_id, log_date) DO UPDATE SET makes=excluded.makes""",
+                (p["id"], d.isoformat(), makes),
+            )
+    conn.commit()
+    conn.close()
+    return RedirectResponse(f"/threehundred?week={week}", status_code=303)
