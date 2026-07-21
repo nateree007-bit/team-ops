@@ -1,9 +1,11 @@
 import base64
+import json
 import os
 import secrets
 from datetime import date, datetime, timedelta
 
-from fastapi import FastAPI, Form, Request
+import anthropic
+from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -13,6 +15,7 @@ from . import db
 
 AUTH_USER = os.environ.get("TEAM_OPS_USER")
 AUTH_PASSWORD = os.environ.get("TEAM_OPS_PASSWORD")
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
 
 
 class BasicAuthMiddleware(BaseHTTPMiddleware):
@@ -415,6 +418,125 @@ async def save_stats(event_id: int, request: Request):
     return RedirectResponse(f"/schedule/{event_id}", status_code=303)
 
 
+def _build_schedule_import_prompt() -> str:
+    return f"""You are extracting a structured weekly schedule from a basketball team's schedule PDF.
+
+Today's date is {date.today().isoformat()}. The PDF's day headers (e.g. "Monday, July 20th") never
+state a year — use today's date to infer the correct year for every event (the schedule always refers
+to a week at or near the current date, not a past year).
+
+Return ONLY a JSON array (no markdown fences, no commentary before or after) of event objects with
+exactly these fields:
+- "type": one of "practice", "conditioning", "weights", "meal", "study_hall", "meeting", "game", "travel", "other"
+- "title": short event title (e.g. "Breakfast", "Conditioning", "Small Group")
+- "date": ISO date YYYY-MM-DD, computed from the day headers in the PDF
+- "start_time": 24-hour "HH:MM", or null if no time is given (e.g. "OFF DAY")
+- "end_time": 24-hour "HH:MM", or null if no end time is given
+- "location": short location string, or null
+- "notes": extra detail such as who's involved, or null
+
+Rules:
+- Include EVERY line item in the document for every day, including informational or "FYI" lines about
+  other teams or facility usage (e.g. "Women's Team in the weight room until 10:00 AM", "Women's
+  Volleyball Camp in Field House"). These affect the team's own scheduling and facility availability,
+  so they matter even though they aren't the team's own activity. Use type "other" for these.
+- Infer AM/PM from context when it isn't explicit (e.g. a time between two PM-labeled times is probably PM).
+- "until X" or a time range means both start_time and end_time should be set.
+- Items with no time at all (like "OFF DAY") should have start_time and end_time both null.
+- Keep title short; put extra detail (attendee names, "if necessary", etc.) in notes.
+- Output strictly valid JSON. No trailing commas, no comments.
+"""
+
+
+@app.post("/schedule/import-pdf")
+async def import_schedule_pdf(request: Request, file: UploadFile = File(...)):
+    if not ANTHROPIC_API_KEY:
+        return Response(
+            "ANTHROPIC_API_KEY is not configured on this server.", status_code=500
+        )
+
+    pdf_bytes = await file.read()
+    pdf_b64 = base64.standard_b64encode(pdf_bytes).decode("utf-8")
+
+    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    message = client.messages.create(
+        model="claude-haiku-4-5-20251001",
+        max_tokens=4096,
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "document",
+                        "source": {
+                            "type": "base64",
+                            "media_type": "application/pdf",
+                            "data": pdf_b64,
+                        },
+                    },
+                    {"type": "text", "text": _build_schedule_import_prompt()},
+                ],
+            }
+        ],
+    )
+    raw_text = message.content[0].text.strip()
+
+    if raw_text.startswith("```"):
+        lines = raw_text.split("\n")
+        if lines[-1].strip().startswith("```"):
+            lines = lines[1:-1]
+        else:
+            lines = lines[1:]
+        raw_text = "\n".join(lines)
+    start = raw_text.find("[")
+    end = raw_text.rfind("]")
+    if start != -1 and end != -1:
+        raw_text = raw_text[start : end + 1]
+
+    try:
+        events = json.loads(raw_text)
+    except json.JSONDecodeError:
+        return Response(
+            "Couldn't parse the AI's response as JSON. Raw output:\n\n" + raw_text,
+            media_type="text/plain",
+            status_code=500,
+        )
+
+    return templates.TemplateResponse(
+        request,
+        "schedule_import_preview.html",
+        {"events": events, "events_json": json.dumps(events), "active": "schedule"},
+    )
+
+
+@app.post("/schedule/import-pdf/confirm")
+def confirm_import_schedule_pdf(events_json: str = Form(...)):
+    events = json.loads(events_json)
+    conn = db.get_connection()
+    for e in events:
+        conn.execute(
+            """INSERT INTO events (type, title, event_date, event_time, event_time_end, location, notes)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (
+                e.get("type") or "other",
+                e.get("title") or "Untitled",
+                e["date"],
+                e.get("start_time"),
+                e.get("end_time"),
+                e.get("location"),
+                e.get("notes"),
+            ),
+        )
+    conn.commit()
+    conn.close()
+    week = (
+        _week_start(datetime.strptime(events[0]["date"], "%Y-%m-%d").date()).isoformat()
+        if events
+        else ""
+    )
+    return RedirectResponse(f"/schedule?week={week}", status_code=303)
+
+
 # ---------- Scouting Reports ----------
 
 @app.get("/scouting")
@@ -680,82 +802,3 @@ async def save_shot_logs(request: Request):
     conn.commit()
     conn.close()
     return RedirectResponse(f"/threehundred?week={week}", status_code=303)
-
-
-# ---------- One-time import: this week's schedule from the PDF ----------
-# Source: "Monday, July 20th - Sunday, July 26th .pdf" (Men's Basketball Weekly Schedule)
-# (type, title, event_date, event_time, event_time_end, location, notes)
-# Remove this route after running it once.
-
-WEEKLY_SCHEDULE_IMPORT = [
-    ("meal", "Breakfast", "2026-07-20", "08:00", "08:15", None, "Full Team"),
-    ("conditioning", "Conditioning", "2026-07-20", "08:30", None, "Field House", "Full Team"),
-    ("other", "Women's Team in the weight room", "2026-07-20", "09:00", "10:00", "Weight Room", None),
-    ("weights", "Weights", "2026-07-20", "10:00", None, None, "Full Team"),
-    ("other", "Women's Team on the court", "2026-07-20", "10:00", "12:00", "Court", None),
-    ("meal", "Lunch", "2026-07-20", "12:30", "12:50", "Dining Hall", "Full Team"),
-    ("study_hall", "Study Hall (CCH)", "2026-07-20", "13:00", "14:00", "CCH", "DJ, Isaiah, Daniel, Khi"),
-    ("practice", "Small Group", "2026-07-20", "14:30", None, None, "Dan, Foon, Bin, Beau, Winston, Sebastian, Cedric, Jordan"),
-    ("practice", "Small Group", "2026-07-20", "15:30", None, None, "Jamal, Khi, CJ, Isaiah, Bryson, Jacori, DJ, Daniel"),
-
-    ("meal", "Breakfast", "2026-07-21", "08:00", "08:15", None, "Full Team"),
-    ("conditioning", "Conditioning", "2026-07-21", "08:30", None, "Field House", "Full Team"),
-    ("weights", "Weights", "2026-07-21", "09:00", None, None, "Full Team"),
-    ("other", "Women's Team on the court", "2026-07-21", "10:00", "12:00", "Court", None),
-    ("meal", "Lunch", "2026-07-21", "12:30", "12:50", "Dining Hall", "Full Team"),
-    ("study_hall", "Study Hall (CCH)", "2026-07-21", "13:00", "14:00", "CCH", "DJ, Isaiah, Daniel, Khi"),
-    ("practice", "Small Group", "2026-07-21", "14:30", None, None, "Dan, Foon, Bin, Beau, Winston, Sebastian, Cedric, Jordan"),
-    ("practice", "Small Group", "2026-07-21", "15:30", None, None, "Jamal, Khi, CJ, Isaiah, Bryson, Jacori, DJ, Daniel"),
-
-    ("other", "Women's Team in the weight room", "2026-07-22", "09:00", "10:00", "Weight Room", None),
-    ("other", "Women's Team on the court", "2026-07-22", "10:00", "12:00", "Court", None),
-    ("meal", "Lunch", "2026-07-22", "12:30", "12:50", "Dining Hall", "Full Team"),
-    ("study_hall", "Study Hall (CCH)", "2026-07-22", "13:30", "14:30", "CCH", "DJ, Isaiah, Daniel, Khi"),
-    ("other", "Team Arrives at Field House", "2026-07-22", "16:45", None, "Field House", "Full Team"),
-    ("meeting", "Meet and Greet", "2026-07-22", "17:00", None, "Field House", "Full Team"),
-    ("practice", "Open Practice Program (1 Hour of Basketball)", "2026-07-22", "17:30", "18:30", "Field House", "Full Team"),
-    ("meeting", "Mingle with Guest", "2026-07-22", "18:45", None, "Field House", "Full Team"),
-
-    ("conditioning", "Conditioning", "2026-07-23", "07:00", None, "Soccer Field", "Full Team"),
-    ("other", "Women's Team in the weight room", "2026-07-23", "09:00", "10:00", "Weight Room", None),
-    ("weights", "Weights", "2026-07-23", "10:00", None, None, "Full Team"),
-    ("other", "Women's Team on the court", "2026-07-23", "10:00", "12:00", "Court", None),
-    ("meal", "Lunch", "2026-07-23", "12:30", "12:50", "Dining Hall", "Full Team"),
-    ("study_hall", "Study Hall (CCH)", "2026-07-23", "13:00", "14:00", "CCH", "DJ, Isaiah, Daniel, Khi"),
-    ("practice", "Small Group", "2026-07-23", "14:30", None, None, "Dan, Foon, Bin, Beau, Winston, Sebastian, Cedric, Jordan"),
-    ("practice", "Small Group", "2026-07-23", "15:30", None, None, "Jamal, Khi, CJ, Isaiah, Bryson, Jacori, DJ, Daniel"),
-
-    ("conditioning", "Conditioning", "2026-07-24", "06:00", None, "Dugan Soccer Field", "Full Team"),
-    ("meal", "TACOS!!!!", "2026-07-24", "06:30", None, None, None),
-    ("other", "Women's Volleyball Camp in Field House", "2026-07-24", "07:00", "17:00", "Field House", None),
-    ("study_hall", "Study Hall – If Necessary", "2026-07-24", "10:00", None, None, None),
-    ("meeting", "Life Skills Event", "2026-07-24", "11:00", None, "UC 320", "Full Team"),
-    ("meal", "Lunch", "2026-07-24", "12:30", "12:50", "Dining Hall", "Full Team"),
-    ("other", "Team Activity - TBD", "2026-07-24", "13:00", None, None, None),
-
-    ("other", "OFF DAY", "2026-07-25", None, None, None, None),
-    ("other", "Women's Volleyball Camp in Field House", "2026-07-25", "07:00", "17:00", "Field House", None),
-
-    ("other", "OFF DAY", "2026-07-26", None, None, None, None),
-    ("other", "Women's Volleyball Camp in Field House", "2026-07-26", "07:00", "17:00", "Field House", None),
-    ("practice", "Open Gym", "2026-07-26", "17:30", None, None, None),
-    ("study_hall", "Study Hall – If Necessary", "2026-07-26", "19:00", None, None, None),
-]
-
-
-@app.get("/admin/import-weekly-schedule")
-def import_weekly_schedule():
-    conn = db.get_connection()
-    for event_type, title, event_date, event_time, event_time_end, location, notes in WEEKLY_SCHEDULE_IMPORT:
-        conn.execute(
-            """INSERT INTO events (type, title, event_date, event_time, event_time_end, location, notes)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (event_type, title, event_date, event_time, event_time_end, location, notes),
-        )
-    conn.commit()
-    conn.close()
-    return Response(
-        f"Weekly schedule import complete. {len(WEEKLY_SCHEDULE_IMPORT)} events added for Jul 20-26, 2026.\n"
-        "Check /schedule and the dashboard.",
-        media_type="text/plain",
-    )

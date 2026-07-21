@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Review Import · Team Ops{% endblock %}
+{% block content %}
+<h1>Review parsed schedule</h1>
+<p class="small">{{ events|length }} events parsed from the PDF. Nothing has been saved yet — review below, then confirm or cancel.</p>
+
+<div class="panel">
+  {% if events %}
+  <div style="overflow-x:auto">
+  <table>
+    <tr><th>Date</th><th>Time</th><th>Type</th><th>Title</th><th>Location</th><th>Notes</th></tr>
+    {% for e in events %}
+    <tr>
+      <td>{{ e.date }}</td>
+      <td>{{ e.start_time|fmt_time or '—' }}{% if e.end_time %} – {{ e.end_time|fmt_time }}{% endif %}</td>
+      <td><span class="badge {{ e.type or 'other' }}">{{ (e.type or 'other').replace('_', ' ')|title }}</span></td>
+      <td>{{ e.title }}</td>
+      <td>{{ e.location or '—' }}</td>
+      <td class="small">{{ e.notes or '—' }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  </div>
+
+  <form method="post" action="/schedule/import-pdf/confirm" style="margin-top:16px">
+    <input type="hidden" name="events_json" value='{{ events_json }}'>
+    <button type="submit">Confirm import ({{ events|length }} events)</button>
+    <a href="/schedule" class="btn secondary" style="margin-left:8px">Cancel</a>
+  </form>
+  {% else %}
+  <div class="empty">No events were found in that PDF. <a href="/schedule">Go back</a> and try a different file.</div>
+  {% endif %}
+</div>
+{% endblock %}

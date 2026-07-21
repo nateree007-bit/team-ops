@@ -4,6 +4,15 @@
 <h1>Schedule</h1>
 
 <div class="panel">
+  <h3>Upload weekly schedule</h3>
+  <p class="small">Upload the schedule PDF you get each week. It'll be parsed automatically and you'll get a chance to review before anything is saved.</p>
+  <form method="post" action="/schedule/import-pdf" enctype="multipart/form-data">
+    <input type="file" name="file" accept="application/pdf" required>
+    <div style="margin-top:12px"><button type="submit">Parse schedule</button></div>
+  </form>
+</div>
+
+<div class="panel">
   <h3>Add event</h3>
   <form method="post" action="/schedule/new">
     <div class="form-grid">
