@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Team Ops{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="nav">
+    <span class="brand">🏀 Team Ops</span>
+    <a href="/" class="{{ 'active' if active == 'dashboard' }}">Dashboard</a>
+    <a href="/players" class="{{ 'active' if active == 'players' }}">Roster</a>
+    <a href="/schedule" class="{{ 'active' if active == 'schedule' }}">Schedule</a>
+    <a href="/scouting" class="{{ 'active' if active == 'scouting' }}">Scouting</a>
+    <a href="/tasks" class="{{ 'active' if active == 'tasks' }}">Tasks</a>
+  </div>
+  <div class="container">
+    {% block content %}{% endblock %}
+  </div>
+</body>
+</html>

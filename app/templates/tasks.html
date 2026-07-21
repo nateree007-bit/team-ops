@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Tasks · Team Ops{% endblock %}
+{% block content %}
+<h1>Tasks</h1>
+<p class="small">Catch-all for anything you need to track — equipment orders, paperwork, phone calls, reminders.</p>
+
+<div class="panel">
+  <h3>Add task</h3>
+  <form method="post" action="/tasks/new">
+    <div class="form-grid">
+      <div><label>Title</label><input name="title" required></div>
+      <div><label>Due date</label><input type="date" name="due_date"></div>
+    </div>
+    <div class="form-grid wide"><div><label>Description</label><textarea name="description"></textarea></div></div>
+    <button type="submit">Add task</button>
+  </form>
+</div>
+
+<div class="panel">
+  <h3>All tasks ({{ tasks|length }})</h3>
+  {% if tasks %}
+  <table>
+    <tr><th></th><th>Title</th><th>Due</th><th>Description</th><th></th></tr>
+    {% for t in tasks %}
+    <tr>
+      <td>
+        <form method="post" action="/tasks/{{ t.id }}/toggle">
+          <input type="checkbox" onchange="this.form.submit()" {{ 'checked' if t.done }} style="width:auto">
+        </form>
+      </td>
+      <td style="{{ 'text-decoration:line-through;color:var(--muted)' if t.done }}">{{ t.title }}</td>
+      <td>{{ t.due_date or '—' }}</td>
+      <td class="small">{{ t.description or '—' }}</td>
+      <td>
+        <form class="inline" method="post" action="/tasks/{{ t.id }}/delete">
+          <button type="submit" class="danger">Delete</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <div class="empty">No tasks yet.</div>
+  {% endif %}
+</div>
+{% endblock %}

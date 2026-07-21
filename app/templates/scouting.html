@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Scouting · Team Ops{% endblock %}
+{% block content %}
+<h1>Scouting Reports</h1>
+
+<div class="panel">
+  <h3>New report</h3>
+  <form method="post" action="/scouting/new">
+    <div class="form-grid">
+      <div><label>Opponent</label><input name="opponent" required></div>
+    </div>
+    <div class="form-grid wide"><div><label>Notes / tendencies</label><textarea name="content" placeholder="Sets, key players, tendencies, matchup notes..."></textarea></div></div>
+    <button type="submit">Create report</button>
+  </form>
+</div>
+
+<div class="panel">
+  <h3>All reports ({{ reports|length }})</h3>
+  {% if reports %}
+  <table>
+    <tr><th>Opponent</th><th>Updated</th></tr>
+    {% for r in reports %}
+    <tr onclick="location.href='/scouting/{{ r.id }}'" style="cursor:pointer">
+      <td>{{ r.opponent }}</td>
+      <td>{{ r.updated_at }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <div class="empty">No scouting reports yet.</div>
+  {% endif %}
+</div>
+{% endblock %}

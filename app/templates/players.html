@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Roster · Team Ops{% endblock %}
+{% block content %}
+<h1>Roster</h1>
+
+<div class="panel">
+  <h3>Add player</h3>
+  <form method="post" action="/players/new">
+    <div class="form-grid">
+      <div><label>Name</label><input name="name" required></div>
+      <div><label>Jersey #</label><input name="jersey_number"></div>
+      <div><label>Position</label><input name="position" placeholder="e.g. PG, SG, F, C"></div>
+      <div><label>Status</label>
+        <select name="status">
+          <option value="active">Active</option>
+          <option value="questionable">Questionable</option>
+          <option value="injured">Injured</option>
+          <option value="out">Out</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-grid wide"><div><label>Notes</label><textarea name="notes"></textarea></div></div>
+    <button type="submit">Add player</button>
+  </form>
+</div>
+
+<div class="panel">
+  <h3>All players ({{ players|length }})</h3>
+  {% if players %}
+  <table>
+    <tr><th>#</th><th>Name</th><th>Position</th><th>Status</th></tr>
+    {% for p in players %}
+    <tr onclick="location.href='/players/{{ p.id }}'" style="cursor:pointer">
+      <td>{{ p.jersey_number or '—' }}</td>
+      <td>{{ p.name }}</td>
+      <td>{{ p.position or '—' }}</td>
+      <td><span class="badge {{ p.status }}">{{ p.status }}</span></td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <div class="empty">No players yet.</div>
+  {% endif %}
+</div>
+{% endblock %}

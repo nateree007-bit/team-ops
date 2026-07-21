@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Dashboard · Team Ops{% endblock %}
+{% block content %}
+<h1>Dashboard</h1>
+
+<div class="grid">
+  <div class="stat-card"><div class="num">{{ counts.players }}</div><div class="label">Players on roster</div></div>
+  <div class="stat-card"><div class="num">{{ counts.upcoming_events }}</div><div class="label">Upcoming events</div></div>
+  <div class="stat-card"><div class="num">{{ counts.open_tasks }}</div><div class="label">Open tasks</div></div>
+  <div class="stat-card"><div class="num">{{ injured|length }}</div><div class="label">Players not active</div></div>
+</div>
+
+<div class="panel">
+  <h3>Upcoming schedule</h3>
+  {% if upcoming %}
+  <table>
+    <tr><th>Date</th><th>Type</th><th>Title</th><th>Opponent</th><th>Location</th></tr>
+    {% for e in upcoming %}
+    <tr onclick="location.href='/schedule/{{ e.id }}'" style="cursor:pointer">
+      <td>{{ e.event_date }}{% if e.event_time %} {{ e.event_time }}{% endif %}</td>
+      <td><span class="badge {{ e.type }}">{{ e.type }}</span></td>
+      <td>{{ e.title }}</td>
+      <td>{{ e.opponent or '—' }}</td>
+      <td>{{ e.location or '—' }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <div class="empty">No upcoming events. <a href="/schedule">Add one</a>.</div>
+  {% endif %}
+</div>
+
+<div class="panel">
+  <h3>Open tasks</h3>
+  {% if open_tasks %}
+  <table>
+    <tr><th>Title</th><th>Due</th></tr>
+    {% for t in open_tasks %}
+    <tr><td>{{ t.title }}</td><td>{{ t.due_date or '—' }}</td></tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <div class="empty">No open tasks. <a href="/tasks">Add one</a>.</div>
+  {% endif %}
+</div>
+
+<div class="panel">
+  <h3>Players not active</h3>
+  {% if injured %}
+  <table>
+    <tr><th>Name</th><th>Status</th><th>Notes</th></tr>
+    {% for p in injured %}
+    <tr onclick="location.href='/players/{{ p.id }}'" style="cursor:pointer">
+      <td>{{ p.name }}</td>
+      <td><span class="badge {{ p.status }}">{{ p.status }}</span></td>
+      <td>{{ p.notes or '—' }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <div class="empty">Everyone is active.</div>
+  {% endif %}
+</div>
+{% endblock %}

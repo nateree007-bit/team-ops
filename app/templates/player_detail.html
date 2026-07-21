@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}{{ player.name }} · Team Ops{% endblock %}
+{% block content %}
+<div class="actions-row">
+  <h1>{{ player.name }}</h1>
+  <form class="inline" method="post" action="/players/{{ player.id }}/delete" onsubmit="return confirm('Delete this player?')">
+    <button type="submit" class="danger">Delete player</button>
+  </form>
+</div>
+
+<div class="panel">
+  <h3>Edit</h3>
+  <form method="post" action="/players/{{ player.id }}/edit">
+    <div class="form-grid">
+      <div><label>Name</label><input name="name" value="{{ player.name }}" required></div>
+      <div><label>Jersey #</label><input name="jersey_number" value="{{ player.jersey_number or '' }}"></div>
+      <div><label>Position</label><input name="position" value="{{ player.position or '' }}"></div>
+      <div><label>Status</label>
+        <select name="status">
+          {% for s in ['active','questionable','injured','out'] %}
+          <option value="{{ s }}" {{ 'selected' if player.status == s }}>{{ s|capitalize }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+    <div class="form-grid wide"><div><label>Notes</label><textarea name="notes">{{ player.notes or '' }}</textarea></div></div>
+    <button type="submit">Save changes</button>
+  </form>
+</div>
+
+<div class="panel">
+  <h3>Game log</h3>
+  {% if stats %}
+  <table>
+    <tr><th>Date</th><th>Opponent</th><th>Min</th><th>Pts</th><th>Reb</th><th>Ast</th><th>Stl</th><th>Blk</th><th>TO</th><th>Fouls</th></tr>
+    {% for s in stats %}
+    <tr>
+      <td><a href="/schedule/{{ s.event_id }}">{{ s.event_date }}</a></td>
+      <td>{{ s.opponent or '—' }}</td>
+      <td>{{ s.minutes }}</td>
+      <td>{{ s.points }}</td>
+      <td>{{ s.rebounds }}</td>
+      <td>{{ s.assists }}</td>
+      <td>{{ s.steals }}</td>
+      <td>{{ s.blocks }}</td>
+      <td>{{ s.turnovers }}</td>
+      <td>{{ s.fouls }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <div class="empty">No stats recorded yet.</div>
+  {% endif %}
+</div>
+{% endblock %}
