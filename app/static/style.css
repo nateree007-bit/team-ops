@@ -37,10 +37,19 @@ a:hover { text-decoration: underline; }
 }
 
 .nav .brand {
-  font-weight: 700;
-  font-size: 17px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
   margin-right: 24px;
+  font-weight: 700;
+  font-size: 15px;
   color: var(--text);
+  white-space: nowrap;
+}
+
+.nav .brand img {
+  height: 36px;
+  width: auto;
 }
 
 .nav a {
