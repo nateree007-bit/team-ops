@@ -555,143 +555,88 @@ async def save_shot_logs(request: Request):
     return RedirectResponse(f"/threehundred?week={week}", status_code=303)
 
 
-# ---------- One-time 300 Club history import (remove after use) ----------
-# Source: 300_Club.xlsx. Day order per player is Mon,Tue,Wed,Thu,Fri,Sat,Sun.
-# None = not logged that day (no row created). 0 = explicitly logged as zero.
+# ---------- One-time fix: merge nickname duplicates, add Sebastian Robinson ----------
+# The earlier history import created nickname-only players instead of matching
+# the real roster entries. This merges their shot_logs into the correct full-name
+# player, deletes the nickname duplicate, and adds a missing roster player.
+# Remove this route after running it once.
 
-HISTORICAL_300CLUB = {
-    "2026-06-01": {  # Week 1 (shooting started Tuesday this week)
-        "Beau": [None, 331, 325, 300, 337, 300, 411],
-        "Bin": [None, 300, 300, 300, 300, 0, 310],
-        "Bryson": [None, 300, 300, 300, 315, 0, 0],
-        "Cedric": [None, 300, 300, 300, 315, 0, 0],
-        "CJ": [None, 308, 307, 300, 309, 304, 0],
-        "Damarion": [None, 320, 300, 300, 300, 300, 0],
-        "Dan": [None, 310, 300, 305, 320, 305, 0],
-        "DJ": [None, None, None, None, None, None, None],
-        "Daniel": [None, 300, 320, 300, 315, 0, 0],
-        "Isaiah": [None, None, None, None, None, None, None],
-        "Jacori": [None, 300, 325, 350, 300, 330, 300],
-        "Jamal": [None, 300, 180, 300, 300, 0, 0],
-    },
-    "2026-06-08": {  # Week 2
-        "Beau": [333, 400, 430, 484, 635, 542, 350],
-        "Bin": [300, 310, 320, 300, 350, 0, 0],
-        "Bryson": [350, 315, 300, 325, 0, 0, 0],
-        "Cedric": [350, 400, 415, 415, 400, 0, 0],
-        "CJ": [350, 328, 395, 335, 337, 347, 0],
-        "Damarion": [350, 250, 315, 310, 320, 0, 0],
-        "Dan": [310, 320, 305, 350, 320, 0, 0],
-        "DJ": [None, None, None, None, None, None, None],
-        "Daniel": [250, 430, 315, 0, 320, 0, 320],
-        "Isaiah": [None, None, None, None, None, None, None],
-        "Jacori": [375, 330, 310, 510, 405, 520, 310],
-        "Jamal": [300, 300, 330, 0, 320, 0, 300],
-    },
-    "2026-06-15": {  # Week 3
-        "Beau": [526, 535, 500, 550, 500, 600, 350],
-        "Bin": [350, 350, 0, 350, None, 350, 300],
-        "Bryson": [450, 400, 300, 0, None, 0, 0],
-        "Cedric": [450, 450, 310, 0, None, 450, 350],
-        "CJ": [316, 410, 206, 285, 365, 455, 0],
-        "Damarion": [0, 300, 350, 350, 500, 450, 350],
-        "Dan": [410, 350, 320, 310, None, 420, 270],
-        "DJ": [None, None, None, None, None, None, None],
-        "Daniel": [450, 450, 310, 0, 500, 350, 325],
-        "Isaiah": [None, None, None, None, None, None, None],
-        "Jacori": [530, 0, 850, 400, 350, 450, 350],
-        "Jamal": [400, 200, 400, 0, None, 350, 0],
-    },
-    "2026-06-22": {  # Week 4
-        "Beau": [550, 500, 400, 300, 300, 300, 300],
-        "Bin": [360, 350, 0, 350, 0, 400, 340],
-        "Bryson": [535, 335, 375, 425, 400, 450, 430],
-        "Cedric": [400, 400, 0, 450, 400, 400, 400],
-        "CJ": [337, 375, 0, 385, 320, 400, 300],
-        "Damarion": [450, 400, 375, 400, 400, 450, 430],
-        "Dan": [340, 320, 320, 350, 320, 0, 300],
-        "DJ": [None, None, None, None, None, None, None],
-        "Daniel": [350, 325, 350, 315, 350, 0, 330],
-        "Isaiah": [None, None, None, None, None, 450, 450],
-        "Jacori": [600, 400, 350, 350, 0, 300, 400],
-        "Jamal": [400, 0, 300, 0, 500, 300, 0],
-    },
-    # Week of 2026-06-29 was skipped (no tracking that week).
-    "2026-07-06": {  # Week 5
-        "Beau": [450, 260, 370, 300, 410, 350, 0],
-        "Bin": [300, 250, 300, 350, 300, 300, 0],
-        "Bryson": [300, 350, 300, 300, 310, 0, 0],
-        "Cedric": [300, 0, 300, 350, 0, 325, 0],
-        "CJ": [325, 0, 300, 345, 375, 300, 0],
-        "Damarion": [325, 300, 300, 325, 350, 350, 0],
-        "Dan": [0, 0, 0, 0, 0, 0, 0],
-        "DJ": [300, 400, 350, 350, 350, 250, 0],
-        "Daniel": [0, 0, 0, 0, 0, 0, 0],
-        "Isaiah": [0, 450, 0, 0, 0, 0, 0],
-        "Jacori": [350, 0, 350, 375, 350, 300, 0],
-        "Jamal": [300, 0, 300, 300, 0, 330, 0],
-    },
-    "2026-07-13": {  # Week 6
-        "Beau": [410, 360, 300, 400, 0, 0, 350],
-        "Bin": [0, 300, 300, 0, 300, 300, 0],
-        "Bryson": [380, 300, 300, 0, 0, 0, 300],
-        "Cedric": [375, 0, 0, 0, 0, 0, 0],
-        "CJ": [325, 255, 0, 337, 345, 325, 325],
-        "Damarion": [350, 0, 300, 300, 300, 350, 350],
-        "Dan": [0, 0, 0, 0, 0, 0, 0],
-        "DJ": [350, 450, 400, 450, 400, 0, 0],
-        "Daniel": [0, 0, 0, 0, 0, 0, 0],
-        "Isaiah": [415, 0, 0, 415, 415, 400, 400],
-        "Jacori": [350, 400, 300, 400, 400, 400, 0],
-        "Jamal": [0, 300, 300, 0, 300, 0, 400],
-    },
+NICKNAME_TO_FULL_NAME = {
+    "Beau": "Beau Billingsley",
+    "Bin": "Bin Basil",
+    "Bryson": "Bryson Wheatfall",
+    "CJ": "CJ Worsham",
+    "Cedric": "Cedric Horton",
+    "DJ": "DJ Kent",
+    "Damarion": "Damarion Winston",
+    "Dan": "Dan Mukuna",
+    "Daniel": "Daniel Michelini-Jackson",
+    "Isaiah": "Isaiah Lewis",
+    "Jacori": "Jacori Jones",
+    "Jamal": "Jamal Ambrose",
 }
 
 
-@app.get("/admin/import-300club-history")
-def import_300club_history():
+@app.get("/admin/fix-300club-names")
+def fix_300club_names():
     conn = db.get_connection()
-    created_players = []
-    matched_players = []
-    rows_written = 0
+    merged = []
+    skipped = []
 
-    for week_start_str, players_data in HISTORICAL_300CLUB.items():
-        wk_start = datetime.strptime(week_start_str, "%Y-%m-%d").date()
-        week_dates = [wk_start + timedelta(days=i) for i in range(7)]
+    for nickname, full_name in NICKNAME_TO_FULL_NAME.items():
+        nick_row = conn.execute(
+            "SELECT id FROM players WHERE name = ?", (nickname,)
+        ).fetchone()
+        full_row = conn.execute(
+            "SELECT id FROM players WHERE name = ?", (full_name,)
+        ).fetchone()
 
-        for name, days in players_data.items():
-            row = conn.execute("SELECT id FROM players WHERE name = ?", (name,)).fetchone()
-            if row:
-                player_id = row["id"]
-                if name not in matched_players:
-                    matched_players.append(name)
-            else:
-                cur = conn.execute(
-                    "INSERT INTO players (name, status) VALUES (?, 'active')", (name,)
-                )
-                player_id = cur.lastrowid
-                created_players.append(name)
+        if not nick_row or not full_row:
+            skipped.append(
+                f"{nickname} -> {full_name} (nickname found: {bool(nick_row)}, full name found: {bool(full_row)})"
+            )
+            continue
 
-            for d, makes in zip(week_dates, days):
-                if makes is None:
-                    continue
-                conn.execute(
-                    """INSERT INTO shot_logs (player_id, log_date, makes) VALUES (?, ?, ?)
-                       ON CONFLICT(player_id, log_date) DO UPDATE SET makes=excluded.makes""",
-                    (player_id, d.isoformat(), makes),
-                )
-                rows_written += 1
+        nick_id = nick_row["id"]
+        full_id = full_row["id"]
+
+        logs = conn.execute(
+            "SELECT log_date, makes FROM shot_logs WHERE player_id = ?", (nick_id,)
+        ).fetchall()
+        for log in logs:
+            conn.execute(
+                """INSERT INTO shot_logs (player_id, log_date, makes) VALUES (?, ?, ?)
+                   ON CONFLICT(player_id, log_date) DO UPDATE SET makes=excluded.makes""",
+                (full_id, log["log_date"], log["makes"]),
+            )
+        conn.execute("DELETE FROM players WHERE id = ?", (nick_id,))
+        merged.append(f"{nickname} -> {full_name} ({len(logs)} days moved)")
+
+    sebastian = conn.execute(
+        "SELECT id FROM players WHERE name = ?", ("Sebastian Robinson",)
+    ).fetchone()
+    if sebastian:
+        sebastian_result = "already existed, left as-is"
+    else:
+        conn.execute(
+            "INSERT INTO players (name, status) VALUES (?, 'active')",
+            ("Sebastian Robinson",),
+        )
+        sebastian_result = "created"
 
     conn.commit()
     conn.close()
 
     lines = [
-        "300 Club history import complete.",
-        f"Rows written: {rows_written}",
-        f"Existing players matched: {sorted(set(matched_players)) or 'none'}",
-        f"New players created: {sorted(set(created_players)) or 'none'}",
+        "300 Club name fix complete.",
         "",
-        "Go check /threehundred (use Previous week to page back through Jun 1 - Jul 19)"
-        " and the All-time / Streaks leaderboards.",
+        "Merged (nickname -> full name):",
+        *[f"  {m}" for m in merged],
+        "",
+        f"Skipped (not found): {skipped or 'none'}",
+        "",
+        f"Sebastian Robinson: {sebastian_result}",
+        "",
+        "Check /players for duplicates and /threehundred for the leaderboards.",
     ]
     return Response("\n".join(lines), media_type="text/plain")
