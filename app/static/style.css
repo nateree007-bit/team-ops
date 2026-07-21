@@ -204,6 +204,21 @@ button.danger:hover { background: rgba(228,84,74,.12); }
 .badge.travel { background: rgba(0,173,77,.15); color: var(--ok); }
 .badge.other { background: var(--panel-hover); color: var(--muted); }
 
+.birthday-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.birthday-pill {
+  background: var(--panel-hover);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 6px 14px;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
 .actions-row {
   display: flex;
   justify-content: space-between;

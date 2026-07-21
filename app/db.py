@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS players (
     position TEXT,
     status TEXT NOT NULL DEFAULT 'active',
     notes TEXT,
+    birthday TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -87,6 +88,9 @@ def init_db():
     conn = get_connection()
     try:
         conn.executescript(SCHEMA)
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(players)")}
+        if "birthday" not in columns:
+            conn.execute("ALTER TABLE players ADD COLUMN birthday TEXT")
         conn.commit()
     finally:
         conn.close()

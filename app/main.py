@@ -52,6 +52,18 @@ app.mount("/static", StaticFiles(directory=str(__import__("pathlib").Path(__file
 db.init_db()
 
 
+def _fmt_birthday(iso_str):
+    if not iso_str:
+        return None
+    try:
+        return datetime.strptime(iso_str, "%Y-%m-%d").strftime("%b %d, %Y")
+    except ValueError:
+        return iso_str
+
+
+templates.env.filters["fmt_birthday"] = _fmt_birthday
+
+
 # ---------- Dashboard ----------
 
 @app.get("/")
@@ -75,7 +87,28 @@ def dashboard(request: Request):
         ).fetchone()["c"],
         "open_tasks": conn.execute("SELECT COUNT(*) c FROM tasks WHERE done = 0").fetchone()["c"],
     }
+
+    birthday_rows = conn.execute(
+        "SELECT name, birthday FROM players WHERE birthday IS NOT NULL AND birthday != ''"
+    ).fetchall()
     conn.close()
+
+    today_date = date.today()
+    upcoming_birthdays = []
+    for row in birthday_rows:
+        try:
+            bday = datetime.strptime(row["birthday"], "%Y-%m-%d").date()
+        except ValueError:
+            continue
+        next_occurrence = bday.replace(year=today_date.year)
+        if next_occurrence < today_date:
+            next_occurrence = next_occurrence.replace(year=today_date.year + 1)
+        first_name = row["name"].split()[0]
+        label = f"{first_name} {next_occurrence.strftime('%a')} {next_occurrence.month}/{next_occurrence.day}"
+        upcoming_birthdays.append((next_occurrence, label))
+    upcoming_birthdays.sort(key=lambda x: x[0])
+    upcoming_birthdays = [label for _, label in upcoming_birthdays[:3]]
+
     return templates.TemplateResponse(
         request,
         "dashboard.html",
@@ -85,6 +118,7 @@ def dashboard(request: Request):
             "open_tasks": open_tasks,
             "injured": injured,
             "counts": counts,
+            "upcoming_birthdays": upcoming_birthdays,
             "active": "dashboard",
         },
     )
@@ -108,12 +142,13 @@ def create_player(
     jersey_number: str = Form(""),
     position: str = Form(""),
     status: str = Form("active"),
+    birthday: str = Form(""),
     notes: str = Form(""),
 ):
     conn = db.get_connection()
     conn.execute(
-        "INSERT INTO players (name, jersey_number, position, status, notes) VALUES (?, ?, ?, ?, ?)",
-        (name, jersey_number, position, status, notes),
+        "INSERT INTO players (name, jersey_number, position, status, birthday, notes) VALUES (?, ?, ?, ?, ?, ?)",
+        (name, jersey_number, position, status, birthday or None, notes),
     )
     conn.commit()
     conn.close()
@@ -145,12 +180,13 @@ def edit_player(
     jersey_number: str = Form(""),
     position: str = Form(""),
     status: str = Form("active"),
+    birthday: str = Form(""),
     notes: str = Form(""),
 ):
     conn = db.get_connection()
     conn.execute(
-        "UPDATE players SET name=?, jersey_number=?, position=?, status=?, notes=? WHERE id=?",
-        (name, jersey_number, position, status, notes, player_id),
+        "UPDATE players SET name=?, jersey_number=?, position=?, status=?, birthday=?, notes=? WHERE id=?",
+        (name, jersey_number, position, status, birthday or None, notes, player_id),
     )
     conn.commit()
     conn.close()
@@ -553,3 +589,55 @@ async def save_shot_logs(request: Request):
     conn.commit()
     conn.close()
     return RedirectResponse(f"/threehundred?week={week}", status_code=303)
+
+
+# ---------- One-time import: player birthdays from MBB Directory ----------
+# Source: MBB Directory 2026-2027 copy.xlsx, Contact Sheet.
+# Remove this route after running it once.
+
+BIRTHDAYS = {
+    "Bin Basil": "2005-07-05",
+    "Beau Billingsley": "2007-09-26",
+    "Lamin Foon": "2008-04-23",
+    "Jacori Jones": "2007-08-21",
+    "DJ Kent": "2006-07-29",
+    "Cedric Horton": "2006-01-26",
+    "Jordan Mizell": "2005-10-05",
+    "Bryson Wheatfall": "2006-10-04",
+    "Dan Mukuna": "2003-04-29",
+    "Sebastian Robinson": "2004-11-16",
+    "Khi Wallace": "2005-06-28",
+    "Daniel Michelini-Jackson": "2004-08-20",
+    "Damarion Winston": "2005-10-27",
+    "CJ Worsham": "2005-12-10",
+    "Isaiah Lewis": "2004-07-05",
+    "Jamal Ambrose": "2003-10-09",
+}
+
+
+@app.get("/admin/import-birthdays")
+def import_birthdays():
+    conn = db.get_connection()
+    updated = []
+    not_found = []
+
+    for name, birthday in BIRTHDAYS.items():
+        row = conn.execute("SELECT id FROM players WHERE name = ?", (name,)).fetchone()
+        if not row:
+            not_found.append(name)
+            continue
+        conn.execute("UPDATE players SET birthday = ? WHERE id = ?", (birthday, row["id"]))
+        updated.append(name)
+
+    conn.commit()
+    conn.close()
+
+    lines = [
+        "Birthday import complete.",
+        f"Updated: {sorted(updated)}",
+        "",
+        f"Not found on roster (skipped): {not_found or 'none'}",
+        "",
+        "Check /players and the dashboard's Upcoming birthdays panel.",
+    ]
+    return Response("\n".join(lines), media_type="text/plain")

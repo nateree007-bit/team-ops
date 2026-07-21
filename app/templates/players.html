@@ -18,6 +18,7 @@
           <option value="out">Out</option>
         </select>
       </div>
+      <div><label>Birthday</label><input type="date" name="birthday"></div>
     </div>
     <div class="form-grid wide"><div><label>Notes</label><textarea name="notes"></textarea></div></div>
     <button type="submit">Add player</button>
@@ -28,13 +29,14 @@
   <h3>All players ({{ players|length }})</h3>
   {% if players %}
   <table>
-    <tr><th>#</th><th>Name</th><th>Position</th><th>Status</th></tr>
+    <tr><th>#</th><th>Name</th><th>Position</th><th>Status</th><th>Birthday</th></tr>
     {% for p in players %}
     <tr onclick="location.href='/players/{{ p.id }}'" style="cursor:pointer">
       <td>{{ p.jersey_number or '—' }}</td>
       <td>{{ p.name }}</td>
       <td>{{ p.position or '—' }}</td>
       <td><span class="badge {{ p.status }}">{{ p.status }}</span></td>
+      <td>{{ p.birthday|fmt_birthday or '—' }}</td>
     </tr>
     {% endfor %}
   </table>

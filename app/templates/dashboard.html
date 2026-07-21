@@ -10,6 +10,17 @@
   <div class="stat-card"><div class="num">{{ injured|length }}</div><div class="label">Players not active</div></div>
 </div>
 
+{% if upcoming_birthdays %}
+<div class="panel">
+  <h3>🎂 Upcoming birthdays</h3>
+  <div class="birthday-row">
+    {% for b in upcoming_birthdays %}
+    <span class="birthday-pill">{{ b }}</span>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
 <div class="panel">
   <h3>Upcoming schedule</h3>
   {% if upcoming %}

@@ -22,6 +22,7 @@
           {% endfor %}
         </select>
       </div>
+      <div><label>Birthday</label><input type="date" name="birthday" value="{{ player.birthday or '' }}"></div>
     </div>
     <div class="form-grid wide"><div><label>Notes</label><textarea name="notes">{{ player.notes or '' }}</textarea></div></div>
     <button type="submit">Save changes</button>
