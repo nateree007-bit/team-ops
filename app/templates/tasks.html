@@ -21,15 +21,20 @@
       {% endfor %}
       <div class="assignee-select-wrap">
         <button type="button" class="assignee-btn" id="manager-btn">Manager <span class="plus">+</span></button>
-        <select id="manager-select" class="assignee-select" size="{{ managers|length }}" hidden>
-          {% for m in managers %}<option value="{{ m }}">{{ m }}</option>{% endfor %}
-        </select>
+        <div id="manager-menu" class="assignee-menu" hidden>
+          {% for m in managers %}
+          <button type="button" data-name="{{ m }}">{{ m }}</button>
+          {% endfor %}
+        </div>
       </div>
       <div class="assignee-select-wrap">
         <button type="button" class="assignee-btn" id="player-btn">Player <span class="plus">+</span></button>
-        <select id="player-select" class="assignee-select" size="{{ [players|length, 8]|min }}" hidden>
-          {% for p in players %}<option value="{{ p }}">{{ p }}</option>{% endfor %}
-        </select>
+        <div id="player-menu" class="assignee-menu" hidden>
+          {% for p in players %}
+          <button type="button" data-name="{{ p }}">{{ p }}</button>
+          {% endfor %}
+          {% if not players %}<div class="assignee-menu-empty">No players on the roster</div>{% endif %}
+        </div>
       </div>
     </div>
   </div>
@@ -121,8 +126,13 @@
   const nameEl = document.getElementById('todo-form-assignee-name');
   const assigneeInput = document.getElementById('assignee-input');
   const titleInput = document.getElementById('todo-title');
-  const managerSelect = document.getElementById('manager-select');
-  const playerSelect = document.getElementById('player-select');
+  const managerMenu = document.getElementById('manager-menu');
+  const playerMenu = document.getElementById('player-menu');
+
+  function closeMenus() {
+    managerMenu.hidden = true;
+    playerMenu.hidden = true;
+  }
 
   function chooseAssignee(name, btn) {
     assigneeInput.value = name;
@@ -130,8 +140,7 @@
     form.hidden = false;
     document.querySelectorAll('.assignee-btn').forEach(b => b.classList.remove('selected'));
     if (btn) btn.classList.add('selected');
-    managerSelect.hidden = true;
-    playerSelect.hidden = true;
+    closeMenus();
     form.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     titleInput.focus();
   }
@@ -140,16 +149,29 @@
     btn.addEventListener('click', () => chooseAssignee(btn.dataset.assignee, btn));
   });
 
-  document.getElementById('manager-btn').addEventListener('click', () => {
-    playerSelect.hidden = true;
-    managerSelect.hidden = !managerSelect.hidden;
+  document.getElementById('manager-btn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    playerMenu.hidden = true;
+    managerMenu.hidden = !managerMenu.hidden;
   });
-  document.getElementById('player-btn').addEventListener('click', () => {
-    managerSelect.hidden = true;
-    playerSelect.hidden = !playerSelect.hidden;
+  document.getElementById('player-btn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    managerMenu.hidden = true;
+    playerMenu.hidden = !playerMenu.hidden;
   });
-  managerSelect.addEventListener('change', () => chooseAssignee(managerSelect.value, document.getElementById('manager-btn')));
-  playerSelect.addEventListener('change', () => chooseAssignee(playerSelect.value, document.getElementById('player-btn')));
+
+  managerMenu.addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-name]');
+    if (b) chooseAssignee(b.dataset.name, document.getElementById('manager-btn'));
+  });
+  playerMenu.addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-name]');
+    if (b) chooseAssignee(b.dataset.name, document.getElementById('player-btn'));
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.assignee-select-wrap')) closeMenus();
+  });
 
   document.getElementById('todo-cancel').addEventListener('click', () => {
     form.hidden = true;

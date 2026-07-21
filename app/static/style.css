@@ -624,29 +624,56 @@ tr.past td { opacity: .45; }
 
 .assignee-select-wrap { position: relative; }
 
-.assignee-select {
+@keyframes menu-pop {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.assignee-menu {
   position: absolute;
-  top: calc(100% + 6px);
+  top: calc(100% + 8px);
   left: 0;
   z-index: 30;
-  min-width: 170px;
-  background: rgba(10, 19, 27, .97);
+  min-width: 190px;
+  max-height: 280px;
+  overflow-y: auto;
+  background: rgba(10, 19, 27, .98);
   border: 1px solid var(--glass-border-strong);
-  border-radius: 12px;
+  border-radius: 13px;
   padding: 6px;
   box-shadow: var(--shadow-lift);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  animation: menu-pop var(--dur-fast) var(--ease-out-quart);
 }
 
-.assignee-select option {
-  padding: 8px 10px;
-  border-radius: 7px;
+.assignee-menu button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  padding: 9px 12px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  box-shadow: none;
   cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-out-quart);
 }
 
-.assignee-select option:hover,
-.assignee-select option:checked {
-  background: rgba(59, 160, 226, .25);
-  color: #fff;
+.assignee-menu button:hover {
+  background: rgba(59, 160, 226, .22);
+  transform: none;
+  box-shadow: none;
+}
+
+.assignee-menu-empty {
+  padding: 9px 12px;
+  font-size: 13px;
+  color: var(--muted);
 }
 
 .todo-form-heading {
