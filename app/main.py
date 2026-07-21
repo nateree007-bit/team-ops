@@ -553,3 +553,90 @@ async def save_shot_logs(request: Request):
     conn.commit()
     conn.close()
     return RedirectResponse(f"/threehundred?week={week}", status_code=303)
+
+
+# ---------- One-time fix: merge nickname duplicates, add Sebastian Robinson ----------
+# The earlier history import created nickname-only players instead of matching
+# the real roster entries. This merges their shot_logs into the correct full-name
+# player, deletes the nickname duplicate, and adds a missing roster player.
+# Remove this route after running it once.
+
+NICKNAME_TO_FULL_NAME = {
+    "Beau": "Beau Billingsley",
+    "Bin": "Bin Basil",
+    "Bryson": "Bryson Wheatfall",
+    "CJ": "CJ Worsham",
+    "Cedric": "Cedric Horton",
+    "DJ": "DJ Kent",
+    "Damarion": "Damarion Winston",
+    "Dan": "Dan Mukuna",
+    "Daniel": "Daniel Michelini-Jackson",
+    "Isaiah": "Isaiah Lewis",
+    "Jacori": "Jacori Jones",
+    "Jamal": "Jamal Ambrose",
+}
+
+
+@app.get("/admin/fix-300club-names")
+def fix_300club_names():
+    conn = db.get_connection()
+    merged = []
+    skipped = []
+
+    for nickname, full_name in NICKNAME_TO_FULL_NAME.items():
+        nick_row = conn.execute(
+            "SELECT id FROM players WHERE name = ?", (nickname,)
+        ).fetchone()
+        full_row = conn.execute(
+            "SELECT id FROM players WHERE name = ?", (full_name,)
+        ).fetchone()
+
+        if not nick_row or not full_row:
+            skipped.append(
+                f"{nickname} -> {full_name} (nickname found: {bool(nick_row)}, full name found: {bool(full_row)})"
+            )
+            continue
+
+        nick_id = nick_row["id"]
+        full_id = full_row["id"]
+
+        logs = conn.execute(
+            "SELECT log_date, makes FROM shot_logs WHERE player_id = ?", (nick_id,)
+        ).fetchall()
+        for log in logs:
+            conn.execute(
+                """INSERT INTO shot_logs (player_id, log_date, makes) VALUES (?, ?, ?)
+                   ON CONFLICT(player_id, log_date) DO UPDATE SET makes=excluded.makes""",
+                (full_id, log["log_date"], log["makes"]),
+            )
+        conn.execute("DELETE FROM players WHERE id = ?", (nick_id,))
+        merged.append(f"{nickname} -> {full_name} ({len(logs)} days moved)")
+
+    sebastian = conn.execute(
+        "SELECT id FROM players WHERE name = ?", ("Sebastian Robinson",)
+    ).fetchone()
+    if sebastian:
+        sebastian_result = "already existed, left as-is"
+    else:
+        conn.execute(
+            "INSERT INTO players (name, status) VALUES (?, 'active')",
+            ("Sebastian Robinson",),
+        )
+        sebastian_result = "created"
+
+    conn.commit()
+    conn.close()
+
+    lines = [
+        "300 Club name fix complete.",
+        "",
+        "Merged (nickname -> full name):",
+        *[f"  {m}" for m in merged],
+        "",
+        f"Skipped (not found): {skipped or 'none'}",
+        "",
+        f"Sebastian Robinson: {sebastian_result}",
+        "",
+        "Check /players for duplicates and /threehundred for the leaderboards.",
+    ]
+    return Response("\n".join(lines), media_type="text/plain")
