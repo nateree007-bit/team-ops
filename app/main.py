@@ -179,11 +179,26 @@ def dashboard(request: Request):
         next_occurrence = bday.replace(year=today_date.year)
         if next_occurrence < today_date:
             next_occurrence = next_occurrence.replace(year=today_date.year + 1)
-        first_name = row["name"].split()[0]
-        label = f"{first_name} {next_occurrence.strftime('%a')} {next_occurrence.month}/{next_occurrence.day}"
-        upcoming_birthdays.append((next_occurrence, label))
+        days_until = (next_occurrence - today_date).days
+        if days_until == 0:
+            when = "today! 🎉"
+        elif days_until == 1:
+            when = "tomorrow"
+        else:
+            when = f"in {days_until} days"
+        upcoming_birthdays.append(
+            (
+                next_occurrence,
+                {
+                    "name": row["name"].split()[0],
+                    "date_label": f"{next_occurrence.strftime('%a')} {next_occurrence.month}/{next_occurrence.day}",
+                    "when": when,
+                    "is_today": days_until == 0,
+                },
+            )
+        )
     upcoming_birthdays.sort(key=lambda x: x[0])
-    upcoming_birthdays = [label for _, label in upcoming_birthdays[:3]]
+    upcoming_birthdays = [b for _, b in upcoming_birthdays[:3]]
 
     return templates.TemplateResponse(
         request,

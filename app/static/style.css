@@ -424,19 +424,34 @@ button.danger:hover { background: rgba(239, 111, 99, .14); transform: none; box-
 
 /* ---------- Birthdays ---------- */
 
-.birthday-row { display: flex; flex-wrap: wrap; gap: 10px; }
+/* Tiered birthday stack: closest on top, biggest; the rest fade down */
 
-.birthday-pill {
-  background: rgba(255, 255, 255, .06);
-  border: 1px solid var(--glass-border);
-  border-radius: 999px;
-  padding: 7px 15px;
-  font-size: 13.5px;
-  font-weight: 600;
-  transition: transform var(--dur-base) var(--ease-out-quint),
-              border-color var(--dur-base) var(--ease-out-quart);
+.birthday-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
-.birthday-pill:hover { transform: translateY(-2px); border-color: var(--glass-border-strong); }
+
+.bday {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.bday-name { font-weight: 800; letter-spacing: -0.01em; }
+.bday-date { color: var(--gold); font-weight: 700; }
+.bday-when { color: var(--muted); font-size: .72em; }
+
+.bday-0 { font-size: 24px; }
+.bday-0 .bday-name { font-family: 'Fraunces', Georgia, serif; font-weight: 600; }
+
+.bday-1 { font-size: 16px; opacity: .78; }
+.bday-2 { font-size: 13.5px; opacity: .55; }
+
+.bday-1 .bday-date, .bday-2 .bday-date { color: var(--text); font-weight: 600; }
+
+.bday-today .bday-date, .bday-today .bday-when { color: var(--ok); }
 
 /* ---------- What's next card ---------- */
 

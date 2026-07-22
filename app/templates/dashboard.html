@@ -50,9 +50,13 @@
     {% if upcoming_birthdays %}
     <div class="panel">
       <h3>🎂 Upcoming birthdays</h3>
-      <div class="birthday-row">
+      <div class="birthday-stack">
         {% for b in upcoming_birthdays %}
-        <span class="birthday-pill">{{ b }}</span>
+        <div class="bday bday-{{ loop.index0 }}{{ ' bday-today' if b.is_today }}">
+          <span class="bday-name">{{ b.name }}</span>
+          <span class="bday-date">{{ b.date_label }}</span>
+          <span class="bday-when">{{ b.when }}</span>
+        </div>
         {% endfor %}
       </div>
     </div>
