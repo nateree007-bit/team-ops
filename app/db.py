@@ -66,6 +66,16 @@ CREATE TABLE IF NOT EXISTS shot_logs (
     UNIQUE(player_id, log_date)
 );
 
+CREATE TABLE IF NOT EXISTS staff (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    role TEXT,
+    phone TEXT,
+    email TEXT,
+    birthday TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS tasks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     title TEXT NOT NULL,

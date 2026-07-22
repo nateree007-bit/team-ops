@@ -44,4 +44,50 @@
   <div class="empty">No players yet.</div>
   {% endif %}
 </div>
+
+<div class="panel">
+  <h3>Coaches &amp; support staff ({{ staff|length }})</h3>
+  {% if staff %}
+  <div style="overflow-x:auto">
+  <table>
+    <tr><th>Name</th><th>Role</th><th>Phone</th><th>Email</th><th>Birthday</th></tr>
+    {% for s in staff %}
+    <tr onclick="location.href='/staff/{{ s.id }}'" style="cursor:pointer">
+      <td>{{ s.name }}</td>
+      <td>{{ s.role or '—' }}</td>
+      <td>{{ s.phone or '—' }}</td>
+      <td class="small">{{ s.email or '—' }}</td>
+      <td>{{ s.birthday|fmt_birthday or '—' }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  </div>
+  {% else %}
+  <div class="empty">No staff added yet.</div>
+  {% endif %}
+</div>
+
+<div class="panel">
+  <h3>Add coach / staff member</h3>
+  <form method="post" action="/staff/new">
+    <div class="form-grid">
+      <div><label>Name</label><input name="name" required></div>
+      <div><label>Role</label>
+        <select name="role">
+          <option value="Head Coach">Head Coach</option>
+          <option value="Assistant Coach" selected>Assistant Coach</option>
+          <option value="Athletic Trainer">Athletic Trainer</option>
+          <option value="Strength & Performance">Strength &amp; Performance</option>
+          <option value="Academics">Academics</option>
+          <option value="Manager">Manager</option>
+          <option value="Other">Other</option>
+        </select>
+      </div>
+      <div><label>Phone</label><input name="phone" placeholder="(361) 555-0100"></div>
+      <div><label>Email</label><input type="email" name="email"></div>
+      <div><label>Birthday</label><input type="date" name="birthday"></div>
+    </div>
+    <button type="submit">Add staff member</button>
+  </form>
+</div>
 {% endblock %}

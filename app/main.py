@@ -155,9 +155,6 @@ def dashboard(request: Request):
         """SELECT * FROM tasks WHERE done = 0
            ORDER BY priority, (due_date IS NULL), due_date, created_at LIMIT 10"""
     ).fetchall()
-    injured = conn.execute(
-        "SELECT * FROM players WHERE status != 'active' ORDER BY name"
-    ).fetchall()
     counts = {
         "players": conn.execute("SELECT COUNT(*) c FROM players").fetchone()["c"],
         "today_events": len(today_events),
@@ -165,7 +162,9 @@ def dashboard(request: Request):
     }
 
     birthday_rows = conn.execute(
-        "SELECT name, birthday FROM players WHERE birthday IS NOT NULL AND birthday != ''"
+        """SELECT name, birthday FROM players WHERE birthday IS NOT NULL AND birthday != ''
+           UNION ALL
+           SELECT name, birthday FROM staff WHERE birthday IS NOT NULL AND birthday != ''"""
     ).fetchall()
     conn.close()
 
@@ -209,7 +208,6 @@ def dashboard(request: Request):
             "next_event": next_event,
             "next_event_label": next_event_label,
             "open_tasks": open_tasks,
-            "injured": injured,
             "counts": counts,
             "upcoming_birthdays": upcoming_birthdays,
             "active": "dashboard",
@@ -223,9 +221,12 @@ def dashboard(request: Request):
 def list_players(request: Request):
     conn = db.get_connection()
     players = conn.execute("SELECT * FROM players ORDER BY name").fetchall()
+    staff = conn.execute("SELECT * FROM staff ORDER BY created_at, name").fetchall()
     conn.close()
     return templates.TemplateResponse(
-        request, "players.html", {"players": players, "active": "players"}
+        request,
+        "players.html",
+        {"players": players, "staff": staff, "active": "players"},
     )
 
 
@@ -290,6 +291,77 @@ def edit_player(
 def delete_player(player_id: int):
     conn = db.get_connection()
     conn.execute("DELETE FROM players WHERE id = ?", (player_id,))
+    conn.commit()
+    conn.close()
+    return RedirectResponse("/players", status_code=303)
+
+
+# ---------- Coaches / Support Staff ----------
+
+STAFF_ROLES = [
+    "Head Coach",
+    "Assistant Coach",
+    "Athletic Trainer",
+    "Strength & Performance",
+    "Academics",
+    "Manager",
+    "Other",
+]
+
+
+@app.post("/staff/new")
+def create_staff(
+    name: str = Form(...),
+    role: str = Form(""),
+    phone: str = Form(""),
+    email: str = Form(""),
+    birthday: str = Form(""),
+):
+    conn = db.get_connection()
+    conn.execute(
+        "INSERT INTO staff (name, role, phone, email, birthday) VALUES (?, ?, ?, ?, ?)",
+        (name, role, phone, email, birthday or None),
+    )
+    conn.commit()
+    conn.close()
+    return RedirectResponse("/players", status_code=303)
+
+
+@app.get("/staff/{staff_id}")
+def staff_detail(request: Request, staff_id: int):
+    conn = db.get_connection()
+    member = conn.execute("SELECT * FROM staff WHERE id = ?", (staff_id,)).fetchone()
+    conn.close()
+    return templates.TemplateResponse(
+        request,
+        "staff_detail.html",
+        {"member": member, "roles": STAFF_ROLES, "active": "players"},
+    )
+
+
+@app.post("/staff/{staff_id}/edit")
+def edit_staff(
+    staff_id: int,
+    name: str = Form(...),
+    role: str = Form(""),
+    phone: str = Form(""),
+    email: str = Form(""),
+    birthday: str = Form(""),
+):
+    conn = db.get_connection()
+    conn.execute(
+        "UPDATE staff SET name=?, role=?, phone=?, email=?, birthday=? WHERE id=?",
+        (name, role, phone, email, birthday or None, staff_id),
+    )
+    conn.commit()
+    conn.close()
+    return RedirectResponse("/players", status_code=303)
+
+
+@app.post("/staff/{staff_id}/delete")
+def delete_staff(staff_id: int):
+    conn = db.get_connection()
+    conn.execute("DELETE FROM staff WHERE id = ?", (staff_id,))
     conn.commit()
     conn.close()
     return RedirectResponse("/players", status_code=303)
@@ -894,3 +966,46 @@ async def save_shot_logs(request: Request):
     conn.commit()
     conn.close()
     return RedirectResponse(f"/threehundred?week={week}", status_code=303)
+
+
+# ---------- One-time import: coaches/support staff from MBB Directory ----------
+# Source: MBB Directory 2026-2027 copy.xlsx (Contact Sheet + Size Sheet roles).
+# Remove this route after running it once.
+
+STAFF_IMPORT = [
+    ("Jim Shaw", "Head Coach", "(402) 560-1879", "jim.shaw@tamucc.edu", "1990-09-25"),
+    ("Ralph Davis", "Assistant Coach", "(201) 965-2551", "ralph.davis@tamucc.edu", "1984-10-29"),
+    ("Terrence Rencher", "Assistant Coach", "(512) 921-8917", "terrence.rencher@tamucc.edu", "1973-02-19"),
+    ("Dylan Johnson", "Assistant Coach", "(618) 795-4177", "dylan.johnson@tamucc.edu", "1991-12-02"),
+    ("Robert Edwards", "Assistant Coach", "(913) 907-0336", "robert.edwards@tamucc.edu", "1994-06-14"),
+    ("Johnathan Bell", "Assistant Coach", "(818) 437-0142", "jonathan.finister-bell@tamucc.edu", "1993-09-21"),
+    ("Ashley Myers", "Athletic Trainer", "(361) 446-1459", "ashley.myers@tamucc.edu", "1998-10-28"),
+    ("Derick Soza", "Strength & Performance", "(956) 457-5507", "derick.soza@tamucc.edu", "1991-09-15"),
+    ("Haley Blankinship", "Academics", "(703) 638-2562", "haley.blankinship@tamucc.edu", "1997-11-11"),
+]
+
+
+@app.get("/admin/import-staff")
+def import_staff():
+    conn = db.get_connection()
+    added = []
+    skipped = []
+    for name, role, phone, email, birthday in STAFF_IMPORT:
+        existing = conn.execute("SELECT id FROM staff WHERE name = ?", (name,)).fetchone()
+        if existing:
+            skipped.append(name)
+            continue
+        conn.execute(
+            "INSERT INTO staff (name, role, phone, email, birthday) VALUES (?, ?, ?, ?, ?)",
+            (name, role, phone, email, birthday),
+        )
+        added.append(name)
+    conn.commit()
+    conn.close()
+    return Response(
+        "Staff import complete.\n"
+        f"Added: {added or 'none'}\n"
+        f"Already existed (skipped): {skipped or 'none'}\n\n"
+        "Check the Roster page's staff section and the dashboard birthday tracker.",
+        media_type="text/plain",
+    )

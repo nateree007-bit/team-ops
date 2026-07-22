@@ -88,22 +88,4 @@
   <div class="empty">Nothing scheduled today. <a href="/schedule">Add to the schedule</a>.</div>
   {% endif %}
 </div>
-
-<div class="panel">
-  <h3>Players not active</h3>
-  {% if injured %}
-  <table>
-    <tr><th>Name</th><th>Status</th><th>Notes</th></tr>
-    {% for p in injured %}
-    <tr onclick="location.href='/players/{{ p.id }}'" style="cursor:pointer">
-      <td>{{ p.name }}</td>
-      <td><span class="badge {{ p.status }}">{{ p.status }}</span></td>
-      <td>{{ p.notes or '—' }}</td>
-    </tr>
-    {% endfor %}
-  </table>
-  {% else %}
-  <div class="empty">Everyone is active.</div>
-  {% endif %}
-</div>
 {% endblock %}
