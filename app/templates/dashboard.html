@@ -49,7 +49,7 @@
 
     {% if upcoming_birthdays %}
     <div class="panel">
-      <h3>🎂 Upcoming birthdays</h3>
+      <h3 class="text-center">Upcoming birthdays</h3>
       <div class="birthday-stack">
         {% for b in upcoming_birthdays %}
         <div class="bday bday-{{ loop.index0 }}{{ ' bday-today' if b.is_today }}">
@@ -68,7 +68,6 @@
   <div class="stat-card"><div class="num">{{ counts.players }}</div><div class="label">Players on roster</div></div>
   <div class="stat-card"><div class="num">{{ counts.today_events }}</div><div class="label">Events today</div></div>
   <div class="stat-card"><div class="num">{{ counts.open_tasks }}</div><div class="label">Open to-dos</div></div>
-  <div class="stat-card"><div class="num">{{ injured|length }}</div><div class="label">Players not active</div></div>
 </div>
 
 <div class="panel">

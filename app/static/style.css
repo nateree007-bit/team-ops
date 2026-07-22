@@ -503,6 +503,7 @@ button.danger:hover { background: rgba(239, 111, 99, .14); transform: none; box-
 }
 
 .small { font-size: 12.5px; color: var(--muted); }
+.text-center { text-align: center; }
 
 .day-block { margin-top: 26px; padding-top: 4px; }
 .day-block:first-of-type { margin-top: 8px; }
