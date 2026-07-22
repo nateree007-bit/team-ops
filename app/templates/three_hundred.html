@@ -5,6 +5,18 @@
 <p class="small">Daily goal: {{ goal }} makes. Enter what gets texted in each day, then save the week.</p>
 
 <div class="panel">
+  <h3>Import from a group chat screenshot</h3>
+  <p class="small">Screenshot the chat where guys text their numbers, upload it here, and the reported makes get read automatically. You'll review everything before it saves. If the chat is long, you can select multiple screenshots at once.</p>
+  <form method="post" action="/threehundred/import-screenshot" enctype="multipart/form-data">
+    <div class="form-grid">
+      <div><label>Day the numbers are for</label><input type="date" name="log_date" value="{{ today }}" required></div>
+    </div>
+    <input type="file" name="files" accept="image/png,image/jpeg,image/webp,image/gif" multiple required>
+    <div style="margin-top:12px"><button type="submit">Read screenshot &amp; review</button></div>
+  </form>
+</div>
+
+<div class="panel">
   <div class="actions-row">
     <a href="/threehundred?week={{ prev_week }}">&larr; Previous week</a>
     <h3 style="margin:0">{{ week_label }}{% if is_current_week %} <span class="small">(current week)</span>{% endif %}</h3>

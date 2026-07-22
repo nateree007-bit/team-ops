@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Review Shots Import · Team Ops{% endblock %}
+{% block content %}
+<h1>Review shot numbers</h1>
+<p class="small">{{ rows|length }} report{{ 's' if rows|length != 1 }} read from the screenshot for <strong>{{ date_label }}</strong>. Nothing has been saved yet — fix anything that's wrong, set "Don't save" for rows to skip, then confirm.</p>
+
+<div class="panel">
+  {% if rows %}
+  <form method="post" action="/threehundred/import-screenshot/confirm">
+    <input type="hidden" name="row_count" value="{{ rows|length }}">
+    <div class="form-grid">
+      <div><label>Save for date</label><input type="date" name="log_date" value="{{ log_date }}" required></div>
+    </div>
+    <div style="overflow-x:auto; margin-top:12px">
+    <table>
+      <tr><th>Name in chat</th><th>Makes</th><th>Save as player</th><th>Already logged that day</th></tr>
+      {% for r in rows %}
+      <tr>
+        <td>{{ r.sender }}</td>
+        <td><input type="number" min="0" name="makes_{{ loop.index0 }}" value="{{ r.makes }}" style="max-width:110px"></td>
+        <td>
+          <select name="player_{{ loop.index0 }}">
+            <option value="">— Don't save —</option>
+            {% for p in players %}
+            <option value="{{ p.id }}" {{ 'selected' if p.id == r.player_id }}>{{ p.name }}</option>
+            {% endfor %}
+          </select>
+          {% if not r.player_id %}<div class="small" style="color:var(--warn)">Couldn't match "{{ r.sender }}" — pick a player or leave as Don't save</div>{% endif %}
+        </td>
+        <td class="small">{% if r.existing is not none %}<span style="color:var(--warn)">{{ r.existing }} (will be replaced)</span>{% else %}—{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    </div>
+    <div style="margin-top:16px">
+      <button type="submit">Save these numbers</button>
+      <a href="/threehundred" class="btn secondary" style="margin-left:8px">Cancel</a>
+    </div>
+  </form>
+  {% else %}
+  <div class="empty">No shot reports were found in that screenshot. <a href="/threehundred">Go back</a> and try a clearer screenshot (make sure the numbers are visible).</div>
+  {% endif %}
+</div>
+{% endblock %}

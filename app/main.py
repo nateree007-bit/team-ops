@@ -1257,6 +1257,7 @@ def three_hundred(request: Request, week: str = ""):
             "next_week": (wk_start + timedelta(days=7)).isoformat(),
             "this_week": _week_start(today).isoformat(),
             "is_current_week": is_current_week,
+            "today": today.isoformat(),
             "active": "threehundred",
         },
     )
@@ -1291,6 +1292,180 @@ async def save_shot_logs(request: Request):
             )
     conn.commit()
     conn.close()
+    return RedirectResponse(f"/threehundred?week={week}", status_code=303)
+
+
+_IMAGE_MEDIA_TYPES = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+}
+
+
+def _build_shot_screenshot_prompt(players) -> str:
+    roster = "\n".join(f"- id {p['id']}: {p['name']}" for p in players)
+    return f"""You are reading screenshot(s) of a basketball team group chat where players text in how many
+shots they made today for the "300 Club" (daily goal: 300 makes).
+
+Team roster:
+{roster}
+
+Return ONLY a JSON array (no markdown fences, no commentary), one object per player report found:
+- "sender": the display name shown in the chat for that message (use "me" for the phone owner's own
+  messages, which usually appear on the right without a name)
+- "makes": the number of makes reported, as an integer
+- "player_id": the id of the matching roster player, or null if you can't confidently match
+
+Rules:
+- Chat names are often nicknames or first names — match to the roster by first name, last name, or an
+  obvious nickname. If a name could match two roster players, use null.
+- If the same person reports more than once, keep only their final/latest number.
+- A report is a message whose main content is a shot count (e.g. "315", "made 302", "300 club ✅ 341").
+  Ignore all other chatter, reactions, and questions.
+- Numbers are typically between 0 and 1000. "300+12" style messages mean 312.
+- Output strictly valid JSON. No trailing commas, no comments."""
+
+
+@app.post("/threehundred/import-screenshot")
+async def import_shot_screenshot(
+    request: Request,
+    files: list[UploadFile] = File(...),
+    log_date: str = Form(""),
+):
+    if not ANTHROPIC_API_KEY:
+        return Response(
+            "ANTHROPIC_API_KEY is not configured on this server.", status_code=500
+        )
+    try:
+        the_date = datetime.strptime(log_date, "%Y-%m-%d").date()
+    except ValueError:
+        the_date = _today_local()
+
+    content = []
+    for f in files:
+        ext = os.path.splitext(f.filename or "")[1].lower()
+        media_type = _IMAGE_MEDIA_TYPES.get(ext) or (
+            f.content_type if f.content_type in _IMAGE_MEDIA_TYPES.values() else None
+        )
+        if not media_type:
+            return Response(
+                f"'{f.filename}' isn't a supported image. Please upload PNG or JPG "
+                "screenshots (phone screenshots are usually PNG).",
+                media_type="text/plain",
+                status_code=400,
+            )
+        img_bytes = await f.read()
+        content.append(
+            {
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": media_type,
+                    "data": base64.standard_b64encode(img_bytes).decode("utf-8"),
+                },
+            }
+        )
+
+    conn = db.get_connection()
+    players = conn.execute("SELECT * FROM players ORDER BY name").fetchall()
+    existing = {
+        row["player_id"]: row["makes"]
+        for row in conn.execute(
+            "SELECT player_id, makes FROM shot_logs WHERE log_date = ?",
+            (the_date.isoformat(),),
+        )
+    }
+    conn.close()
+
+    content.append({"type": "text", "text": _build_shot_screenshot_prompt(players)})
+    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    message = client.messages.create(
+        model="claude-haiku-4-5-20251001",
+        max_tokens=2048,
+        messages=[{"role": "user", "content": content}],
+    )
+    raw_text = message.content[0].text.strip()
+    if raw_text.startswith("```"):
+        lines = raw_text.split("\n")
+        lines = lines[1:-1] if lines[-1].strip().startswith("```") else lines[1:]
+        raw_text = "\n".join(lines)
+    start = raw_text.find("[")
+    end = raw_text.rfind("]")
+    if start != -1 and end != -1:
+        raw_text = raw_text[start : end + 1]
+    try:
+        reports = json.loads(raw_text)
+    except json.JSONDecodeError:
+        return Response(
+            "Couldn't parse the AI's response as JSON. Raw output:\n\n" + raw_text,
+            media_type="text/plain",
+            status_code=500,
+        )
+
+    player_ids = {p["id"] for p in players}
+    rows = []
+    for r in reports:
+        try:
+            makes = int(r.get("makes"))
+        except (TypeError, ValueError):
+            continue
+        pid = r.get("player_id")
+        pid = pid if isinstance(pid, int) and pid in player_ids else None
+        rows.append(
+            {
+                "sender": str(r.get("sender") or "?"),
+                "makes": makes,
+                "player_id": pid,
+                "existing": existing.get(pid) if pid else None,
+            }
+        )
+
+    return templates.TemplateResponse(
+        request,
+        "shots_import_preview.html",
+        {
+            "rows": rows,
+            "players": players,
+            "log_date": the_date.isoformat(),
+            "date_label": the_date.strftime("%A, %b %d"),
+            "active": "threehundred",
+        },
+    )
+
+
+@app.post("/threehundred/import-screenshot/confirm")
+async def confirm_shot_screenshot(request: Request):
+    form = await request.form()
+    log_date = form.get("log_date") or _today_local().isoformat()
+    try:
+        the_date = datetime.strptime(log_date, "%Y-%m-%d").date()
+    except ValueError:
+        the_date = _today_local()
+
+    conn = db.get_connection()
+    n = int(form.get("row_count") or 0)
+    saved = 0
+    for i in range(n):
+        pid = form.get(f"player_{i}")
+        makes_raw = form.get(f"makes_{i}")
+        if not pid or makes_raw is None or str(makes_raw).strip() == "":
+            continue
+        try:
+            pid = int(pid)
+            makes = int(makes_raw)
+        except ValueError:
+            continue
+        conn.execute(
+            """INSERT INTO shot_logs (player_id, log_date, makes) VALUES (?, ?, ?)
+               ON CONFLICT(player_id, log_date) DO UPDATE SET makes=excluded.makes""",
+            (pid, the_date.isoformat(), makes),
+        )
+        saved += 1
+    conn.commit()
+    conn.close()
+    week = _week_start(the_date).isoformat()
     return RedirectResponse(f"/threehundred?week={week}", status_code=303)
 
 
