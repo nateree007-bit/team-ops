@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Recruiting · Team Ops{% endblock %}
+{% block content %}
+{% if sheet_url and embed_url %}
+<div class="recruiting-toolbar">
+  <h1>Recruiting</h1>
+  <div class="recruiting-actions">
+    <a href="{{ sheet_url }}" target="_blank" rel="noopener"><button type="button">Open in Google Sheets</button></a>
+    <details class="change-link">
+      <summary>Change link</summary>
+      <form method="post" action="/recruiting/link" class="change-link-form">
+        <input name="url" placeholder="Paste a new Google Sheet link" value="{{ sheet_url }}">
+        <button type="submit">Save</button>
+      </form>
+    </details>
+  </div>
+</div>
+<div class="sheet-embed">
+  <iframe src="{{ embed_url }}" title="Recruiting sheet" loading="lazy"></iframe>
+</div>
+{% else %}
+<h1>Recruiting</h1>
+<div class="panel">
+  <h3>Connect your recruiting sheet</h3>
+  <p class="small">
+    Paste the link to your recruiting Google Sheet and it will show up live on this page.
+    In Google Sheets, click <strong>Share</strong> and set it to
+    <strong>"Anyone with the link — Viewer"</strong>, then copy the link and paste it below.
+  </p>
+  {% if invalid %}
+  <div class="empty" style="margin-bottom:12px">That didn't look like a Google Sheets link — it should start with <strong>docs.google.com/spreadsheets</strong>. Try copying it again.</div>
+  {% endif %}
+  <form method="post" action="/recruiting/link">
+    <div class="form-grid">
+      <div><label>Google Sheet link</label><input name="url" placeholder="https://docs.google.com/spreadsheets/d/..." required></div>
+    </div>
+    <div style="margin-top:12px"><button type="submit">Connect sheet</button></div>
+  </form>
+</div>
+{% endif %}
+{% endblock %}

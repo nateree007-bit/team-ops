@@ -1,6 +1,7 @@
 import base64
 import json
 import os
+import re
 import secrets
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -1005,6 +1006,82 @@ def delete_film(session_id: int):
     conn.commit()
     conn.close()
     return RedirectResponse("/film", status_code=303)
+
+
+# ---------- Recruiting (embedded Google Sheet) ----------
+
+def _get_setting(conn, key):
+    row = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+    return row["value"] if row else None
+
+
+def _set_setting(conn, key, value):
+    conn.execute(
+        "INSERT INTO settings (key, value) VALUES (?, ?) "
+        "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        (key, value),
+    )
+
+
+def _sheet_embed_url(url):
+    """Turn any Google Sheets link into one that renders inside an iframe.
+    Published-to-web links (/d/e/2PACX.../pubhtml) are used as-is; normal
+    share links (/d/<id>/edit) get widget params appended."""
+    if not url:
+        return None
+    if "docs.google.com/spreadsheets" not in url:
+        return None
+    if "/pubhtml" in url or "/d/e/" in url:
+        base = url.split("?")[0]
+        if "/pubhtml" not in base:
+            base = base.rstrip("/") + "/pubhtml"
+        return base + "?widget=true&headers=false"
+    m = re.search(r"/spreadsheets/(?:u/\d+/)?d/([a-zA-Z0-9_-]+)", url)
+    if not m:
+        return None
+    gid = ""
+    gid_m = re.search(r"[#?&]gid=(\d+)", url)
+    if gid_m:
+        gid = "&gid=" + gid_m.group(1)
+    return (
+        f"https://docs.google.com/spreadsheets/d/{m.group(1)}/edit"
+        f"?widget=true&headers=false&rm=minimal{gid}"
+    )
+
+
+@app.get("/recruiting")
+def recruiting(request: Request, invalid: str = ""):
+    conn = db.get_connection()
+    sheet_url = _get_setting(conn, "recruiting_sheet_url")
+    conn.close()
+    return templates.TemplateResponse(
+        request,
+        "recruiting.html",
+        {
+            "active": "recruiting",
+            "sheet_url": sheet_url,
+            "embed_url": _sheet_embed_url(sheet_url),
+            "invalid": invalid == "1",
+        },
+    )
+
+
+@app.post("/recruiting/link")
+def set_recruiting_link(url: str = Form("")):
+    url = url.strip()
+    conn = db.get_connection()
+    if not url:
+        conn.execute("DELETE FROM settings WHERE key = 'recruiting_sheet_url'")
+        conn.commit()
+        conn.close()
+        return RedirectResponse("/recruiting", status_code=303)
+    if _sheet_embed_url(url) is None:
+        conn.close()
+        return RedirectResponse("/recruiting?invalid=1", status_code=303)
+    _set_setting(conn, "recruiting_sheet_url", url)
+    conn.commit()
+    conn.close()
+    return RedirectResponse("/recruiting", status_code=303)
 
 
 # ---------- 300 Club ----------
