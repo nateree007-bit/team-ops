@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}{{ session.title }} · Team Ops{% endblock %}
+{% block content %}
+<div class="actions-row">
+  <h1>{{ session.title }}{% if session.session_date %} <span class="small">{{ session.session_date }}</span>{% endif %}</h1>
+  <form class="inline" method="post" action="/film/{{ session.id }}/delete" onsubmit="return confirm('Delete this film session and its stats?')">
+    <button type="submit" class="danger">Delete session</button>
+  </form>
+</div>
+
+<div class="panel">
+  <h3>Box score — from the coded timeline</h3>
+  {% if lines %}
+  <div style="overflow-x:auto">
+  <table>
+    <tr>
+      <th>Player</th><th>PTS</th><th>FG</th><th>FG%</th><th>3PT</th><th>3P%</th><th>FT</th><th>FT%</th>
+      <th>OREB</th><th>DREB</th><th>REB</th><th>AST</th><th>STL</th><th>BLK</th><th>TO</th>
+    </tr>
+    {% for l in lines %}
+    <tr>
+      <td><strong>{{ l.player }}</strong></td>
+      <td><strong>{{ l.pts }}</strong></td>
+      <td>{{ l.fgm }}-{{ l.fga }}</td>
+      <td>{{ l.fg_pct if l.fg_pct is not none else '—' }}</td>
+      <td>{{ l.threes_made }}-{{ l.threes_att }}</td>
+      <td>{{ l.three_pct if l.three_pct is not none else '—' }}</td>
+      <td>{{ l.ft_made }}-{{ l.ft_att }}</td>
+      <td>{{ l.ft_pct if l.ft_pct is not none else '—' }}</td>
+      <td>{{ l.oreb }}</td>
+      <td>{{ l.dreb }}</td>
+      <td>{{ l.reb }}</td>
+      <td>{{ l.ast }}</td>
+      <td>{{ l.stl }}</td>
+      <td>{{ l.blk }}</td>
+      <td>{{ l.to }}</td>
+    </tr>
+    {% endfor %}
+    <tr class="totals-row">
+      <td><strong>Team</strong></td>
+      <td><strong>{{ totals.pts }}</strong></td>
+      <td>{{ totals.fgm }}-{{ totals.fga }}</td>
+      <td>{{ totals.fg_pct if totals.fg_pct is not none else '—' }}</td>
+      <td>{{ totals.threes_made }}-{{ totals.threes_att }}</td>
+      <td>{{ totals.three_pct if totals.three_pct is not none else '—' }}</td>
+      <td>{{ totals.ft_made }}-{{ totals.ft_att }}</td>
+      <td>{{ totals.ft_pct if totals.ft_pct is not none else '—' }}</td>
+      <td>{{ totals.oreb }}</td>
+      <td>{{ totals.dreb }}</td>
+      <td>{{ totals.reb }}</td>
+      <td>{{ totals.ast }}</td>
+      <td>{{ totals.stl }}</td>
+      <td>{{ totals.blk }}</td>
+      <td>{{ totals.to }}</td>
+    </tr>
+  </table>
+  </div>
+  <p class="small" style="margin-bottom:0">PTS from +2/+3/FT Made · shooting splits from made vs. missed codes · stats reflect what was coded in Sportscode.</p>
+  {% else %}
+  <div class="empty">No stat events found in this timeline.</div>
+  {% endif %}
+</div>
+{% endblock %}

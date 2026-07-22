@@ -76,6 +76,23 @@ CREATE TABLE IF NOT EXISTS staff (
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS film_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    session_date TEXT,
+    source_file TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS film_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id INTEGER NOT NULL REFERENCES film_sessions(id) ON DELETE CASCADE,
+    player TEXT NOT NULL,
+    event TEXT NOT NULL,
+    start_time REAL,
+    end_time REAL
+);
+
 CREATE TABLE IF NOT EXISTS tasks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     title TEXT NOT NULL,

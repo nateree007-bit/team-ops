@@ -819,6 +819,194 @@ def delete_task(task_id: int):
     return RedirectResponse("/tasks", status_code=303)
 
 
+# ---------- Film (Sportscode timeline stats) ----------
+
+# Stat label names in the team's Sportscode code window.
+FILM_STAT_EVENTS = {
+    "+2", "-2", "+3", "-3", "FT Made", "FT Miss",
+    "Assist", "Block", "Steal", "TO", "OREB", "DREB",
+}
+
+# Label-group codes the coders use that differ from display names.
+FILM_PLAYER_ALIASES = {
+    "BB": "Beau",
+    "BW": "Bryson",
+    "CE": "Cedric",
+    "IL": "Isaiah",
+    "JA": "Jamal",
+    "DanielMich": "Daniel",
+}
+
+
+def _parse_sctimeline(raw: bytes):
+    """Parse a .SCTimeline (JSON) export. Returns (session_date, events)
+    where events are dicts of player/event/start/end for stat labels only."""
+    data = json.loads(raw.decode("utf-8-sig"))
+    timeline = data.get("timeline", data)
+    session_date = None
+    start = timeline.get("startTime")
+    if start:
+        try:
+            session_date = datetime.fromisoformat(start.replace("Z", "+00:00")).date().isoformat()
+        except ValueError:
+            pass
+
+    events = []
+    for row in timeline.get("rows", []):
+        row_name = (row.get("name") or "").strip()
+        for inst in row.get("instances", []):
+            for label in inst.get("labels", []):
+                name = (label.get("name") or "").strip()
+                if name not in FILM_STAT_EVENTS:
+                    continue
+                group = (label.get("group") or "").strip()
+                player = FILM_PLAYER_ALIASES.get(group, group) or row_name or "Unknown"
+                events.append(
+                    {
+                        "player": player,
+                        "event": name,
+                        "start": inst.get("startTime"),
+                        "end": inst.get("endTime"),
+                    }
+                )
+    return session_date, events
+
+
+def _film_box_score(rows):
+    """Aggregate film_events rows into per-player box score lines."""
+    players: dict[str, dict] = {}
+    for r in rows:
+        p = players.setdefault(
+            r["player"],
+            {
+                "player": r["player"],
+                "twos_made": 0, "twos_att": 0,
+                "threes_made": 0, "threes_att": 0,
+                "ft_made": 0, "ft_att": 0,
+                "oreb": 0, "dreb": 0,
+                "ast": 0, "stl": 0, "blk": 0, "to": 0,
+            },
+        )
+        e = r["event"]
+        if e == "+2":
+            p["twos_made"] += 1; p["twos_att"] += 1
+        elif e == "-2":
+            p["twos_att"] += 1
+        elif e == "+3":
+            p["threes_made"] += 1; p["threes_att"] += 1
+        elif e == "-3":
+            p["threes_att"] += 1
+        elif e == "FT Made":
+            p["ft_made"] += 1; p["ft_att"] += 1
+        elif e == "FT Miss":
+            p["ft_att"] += 1
+        elif e == "OREB":
+            p["oreb"] += 1
+        elif e == "DREB":
+            p["dreb"] += 1
+        elif e == "Assist":
+            p["ast"] += 1
+        elif e == "Steal":
+            p["stl"] += 1
+        elif e == "Block":
+            p["blk"] += 1
+        elif e == "TO":
+            p["to"] += 1
+
+    lines = []
+    for p in players.values():
+        p["pts"] = 2 * p["twos_made"] + 3 * p["threes_made"] + p["ft_made"]
+        p["fgm"] = p["twos_made"] + p["threes_made"]
+        p["fga"] = p["twos_att"] + p["threes_att"]
+        p["reb"] = p["oreb"] + p["dreb"]
+        p["fg_pct"] = round(100 * p["fgm"] / p["fga"]) if p["fga"] else None
+        p["three_pct"] = round(100 * p["threes_made"] / p["threes_att"]) if p["threes_att"] else None
+        p["ft_pct"] = round(100 * p["ft_made"] / p["ft_att"]) if p["ft_att"] else None
+        lines.append(p)
+    lines.sort(key=lambda x: (-x["pts"], x["player"].lower()))
+
+    totals = {
+        k: sum(l[k] for l in lines)
+        for k in ["pts", "fgm", "fga", "threes_made", "threes_att", "ft_made", "ft_att", "oreb", "dreb", "reb", "ast", "stl", "blk", "to"]
+    }
+    totals["fg_pct"] = round(100 * totals["fgm"] / totals["fga"]) if totals["fga"] else None
+    totals["three_pct"] = round(100 * totals["threes_made"] / totals["threes_att"]) if totals["threes_att"] else None
+    totals["ft_pct"] = round(100 * totals["ft_made"] / totals["ft_att"]) if totals["ft_att"] else None
+    return lines, totals
+
+
+@app.get("/film")
+def list_film(request: Request):
+    conn = db.get_connection()
+    sessions = conn.execute(
+        """SELECT film_sessions.*, COUNT(film_events.id) AS event_count
+           FROM film_sessions LEFT JOIN film_events ON film_events.session_id = film_sessions.id
+           GROUP BY film_sessions.id
+           ORDER BY (session_date IS NULL), session_date DESC, created_at DESC"""
+    ).fetchall()
+    conn.close()
+    return templates.TemplateResponse(
+        request, "film.html", {"sessions": sessions, "active": "film"}
+    )
+
+
+@app.post("/film/upload")
+async def upload_film(title: str = Form(""), file: UploadFile = File(...)):
+    raw = await file.read()
+    try:
+        session_date, events = _parse_sctimeline(raw)
+    except (json.JSONDecodeError, UnicodeDecodeError, AttributeError, TypeError):
+        return Response(
+            "Couldn't parse that file as a Sportscode timeline (.SCTimeline). "
+            "Make sure you're uploading the .SCTimeline file from inside the package.",
+            media_type="text/plain",
+            status_code=400,
+        )
+
+    clean_title = title.strip() or (file.filename or "Untitled session").rsplit(".", 1)[0]
+    conn = db.get_connection()
+    cur = conn.execute(
+        "INSERT INTO film_sessions (title, session_date, source_file) VALUES (?, ?, ?)",
+        (clean_title, session_date, file.filename),
+    )
+    session_id = cur.lastrowid
+    for e in events:
+        conn.execute(
+            "INSERT INTO film_events (session_id, player, event, start_time, end_time) VALUES (?, ?, ?, ?, ?)",
+            (session_id, e["player"], e["event"], e["start"], e["end"]),
+        )
+    conn.commit()
+    conn.close()
+    return RedirectResponse(f"/film/{session_id}", status_code=303)
+
+
+@app.get("/film/{session_id}")
+def film_detail(request: Request, session_id: int):
+    conn = db.get_connection()
+    session = conn.execute(
+        "SELECT * FROM film_sessions WHERE id = ?", (session_id,)
+    ).fetchone()
+    rows = conn.execute(
+        "SELECT player, event FROM film_events WHERE session_id = ?", (session_id,)
+    ).fetchall()
+    conn.close()
+    lines, totals = _film_box_score(rows)
+    return templates.TemplateResponse(
+        request,
+        "film_detail.html",
+        {"session": session, "lines": lines, "totals": totals, "active": "film"},
+    )
+
+
+@app.post("/film/{session_id}/delete")
+def delete_film(session_id: int):
+    conn = db.get_connection()
+    conn.execute("DELETE FROM film_sessions WHERE id = ?", (session_id,))
+    conn.commit()
+    conn.close()
+    return RedirectResponse("/film", status_code=303)
+
+
 # ---------- 300 Club ----------
 
 GOAL = 300

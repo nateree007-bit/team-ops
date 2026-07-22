@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Film · Team Ops{% endblock %}
+{% block content %}
+<h1>Film</h1>
+
+<div class="panel">
+  <h3>Upload a Sportscode timeline</h3>
+  <p class="small">Upload the <strong>.SCTimeline</strong> file from a Sportscode package and the box score gets computed automatically from the coded timeline.</p>
+  <form method="post" action="/film/upload" enctype="multipart/form-data">
+    <div class="form-grid">
+      <div><label>Title (optional — defaults to the file name)</label><input name="title" placeholder="e.g. 6/30 Summer Workout"></div>
+    </div>
+    <input type="file" name="file" accept=".SCTimeline,application/json" required>
+    <div style="margin-top:12px"><button type="submit">Upload &amp; get stats</button></div>
+  </form>
+</div>
+
+<div class="panel">
+  <h3>Sessions ({{ sessions|length }})</h3>
+  {% if sessions %}
+  <table>
+    <tr><th>Date</th><th>Title</th><th>Coded events</th></tr>
+    {% for s in sessions %}
+    <tr onclick="location.href='/film/{{ s.id }}'" style="cursor:pointer">
+      <td>{{ s.session_date or '—' }}</td>
+      <td>{{ s.title }}</td>
+      <td>{{ s.event_count }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <div class="empty">No film sessions yet. Upload a timeline above to get started.</div>
+  {% endif %}
+</div>
+{% endblock %}
