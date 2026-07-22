@@ -8,9 +8,69 @@
   </form>
 </div>
 
+{% if session.video_url %}
+<div class="panel">
+  {% if session.video_kind == 'youtube' %}
+  <div class="video-embed"><div id="yt-player"></div></div>
+  {% elif session.video_kind == 'iframe' %}
+  <div class="video-embed"><iframe src="{{ session.video_url }}" allowfullscreen title="Session video"></iframe></div>
+  {% else %}
+  <div class="video-link-card">
+    <div>
+      <strong>This video can't play inside the site</strong>
+      <div class="small">Hudl keeps team film behind your Hudl login, so it opens over there instead. Click a stat below to get the exact times to jump to in the Hudl player.</div>
+    </div>
+    <a href="{{ session.video_url }}" target="_blank" rel="noopener"><button type="button">Watch on Hudl ↗</button></a>
+  </div>
+  {% endif %}
+
+  <div id="clip-bar" class="clip-bar" hidden>
+    <div class="clip-bar-head">
+      <strong id="clip-label"></strong>
+      {% if session.video_kind == 'youtube' %}
+      <span>
+        <button type="button" class="clip-nav" id="clip-prev">&larr; Prev</button>
+        <span id="clip-counter" class="small"></span>
+        <button type="button" class="clip-nav" id="clip-next">Next &rarr;</button>
+      </span>
+      {% else %}
+      <span class="small">Jump to these times in the video:</span>
+      {% endif %}
+    </div>
+    <div id="clip-chips" class="clip-chips"></div>
+  </div>
+
+  <details class="change-link" style="margin-top:10px">
+    <summary>Change video link</summary>
+    <form method="post" action="/film/{{ session.id }}/video" class="change-link-form" style="position:static">
+      <input name="url" placeholder="Paste a new link (or leave empty to remove)" value="{{ session.video_url }}">
+      <button type="submit">Save</button>
+    </form>
+  </details>
+</div>
+{% else %}
+<div class="panel">
+  <h3>Attach the session video</h3>
+  <p class="small">Paste a <strong>YouTube</strong> link (unlisted works great) to watch here and jump straight to plays when you click a stat — or a <strong>Hudl</strong> link to open the film on Hudl with the play times listed for you.</p>
+  <form method="post" action="/film/{{ session.id }}/video">
+    <div class="form-grid">
+      <div><label>Video link</label><input name="url" placeholder="https://www.youtube.com/watch?v=... or https://www.hudl.com/..." required></div>
+    </div>
+    <div style="margin-top:12px"><button type="submit">Attach video</button></div>
+  </form>
+</div>
+{% endif %}
+
 <div class="panel">
   <h3>Box score — from the coded timeline</h3>
+  {% if has_clips and session.video_url %}
+  <p class="small">Click any stat to pull up those plays{% if session.video_kind == 'youtube' %} — the video jumps through them automatically{% endif %}.</p>
+  {% endif %}
   {% if lines %}
+  {% set clickable = has_clips and session.video_url %}
+  {% macro stat_cell(player, stat, content) -%}
+  <td {% if clickable %}class="stat-cell" data-player="{{ player }}" data-stat="{{ stat }}" title="Show these plays"{% endif %}>{{ content }}</td>
+  {%- endmacro %}
   <div style="overflow-x:auto">
   <table>
     <tr>
@@ -20,38 +80,38 @@
     {% for l in lines %}
     <tr>
       <td><strong>{{ l.player }}</strong></td>
-      <td><strong>{{ l.pts }}</strong></td>
-      <td>{{ l.fgm }}-{{ l.fga }}</td>
+      {{ stat_cell(l.player, 'PTS', '<strong>%s</strong>'|format(l.pts)|safe) }}
+      {{ stat_cell(l.player, 'FG', '%s-%s'|format(l.fgm, l.fga)) }}
       <td>{{ l.fg_pct if l.fg_pct is not none else '—' }}</td>
-      <td>{{ l.threes_made }}-{{ l.threes_att }}</td>
+      {{ stat_cell(l.player, '3PT', '%s-%s'|format(l.threes_made, l.threes_att)) }}
       <td>{{ l.three_pct if l.three_pct is not none else '—' }}</td>
-      <td>{{ l.ft_made }}-{{ l.ft_att }}</td>
+      {{ stat_cell(l.player, 'FT', '%s-%s'|format(l.ft_made, l.ft_att)) }}
       <td>{{ l.ft_pct if l.ft_pct is not none else '—' }}</td>
-      <td>{{ l.oreb }}</td>
-      <td>{{ l.dreb }}</td>
-      <td>{{ l.reb }}</td>
-      <td>{{ l.ast }}</td>
-      <td>{{ l.stl }}</td>
-      <td>{{ l.blk }}</td>
-      <td>{{ l.to }}</td>
+      {{ stat_cell(l.player, 'OREB', l.oreb) }}
+      {{ stat_cell(l.player, 'DREB', l.dreb) }}
+      {{ stat_cell(l.player, 'REB', l.reb) }}
+      {{ stat_cell(l.player, 'AST', l.ast) }}
+      {{ stat_cell(l.player, 'STL', l.stl) }}
+      {{ stat_cell(l.player, 'BLK', l.blk) }}
+      {{ stat_cell(l.player, 'TO', l.to) }}
     </tr>
     {% endfor %}
     <tr class="totals-row">
       <td><strong>Team</strong></td>
-      <td><strong>{{ totals.pts }}</strong></td>
-      <td>{{ totals.fgm }}-{{ totals.fga }}</td>
+      {{ stat_cell('', 'PTS', '<strong>%s</strong>'|format(totals.pts)|safe) }}
+      {{ stat_cell('', 'FG', '%s-%s'|format(totals.fgm, totals.fga)) }}
       <td>{{ totals.fg_pct if totals.fg_pct is not none else '—' }}</td>
-      <td>{{ totals.threes_made }}-{{ totals.threes_att }}</td>
+      {{ stat_cell('', '3PT', '%s-%s'|format(totals.threes_made, totals.threes_att)) }}
       <td>{{ totals.three_pct if totals.three_pct is not none else '—' }}</td>
-      <td>{{ totals.ft_made }}-{{ totals.ft_att }}</td>
+      {{ stat_cell('', 'FT', '%s-%s'|format(totals.ft_made, totals.ft_att)) }}
       <td>{{ totals.ft_pct if totals.ft_pct is not none else '—' }}</td>
-      <td>{{ totals.oreb }}</td>
-      <td>{{ totals.dreb }}</td>
-      <td>{{ totals.reb }}</td>
-      <td>{{ totals.ast }}</td>
-      <td>{{ totals.stl }}</td>
-      <td>{{ totals.blk }}</td>
-      <td>{{ totals.to }}</td>
+      {{ stat_cell('', 'OREB', totals.oreb) }}
+      {{ stat_cell('', 'DREB', totals.dreb) }}
+      {{ stat_cell('', 'REB', totals.reb) }}
+      {{ stat_cell('', 'AST', totals.ast) }}
+      {{ stat_cell('', 'STL', totals.stl) }}
+      {{ stat_cell('', 'BLK', totals.blk) }}
+      {{ stat_cell('', 'TO', totals.to) }}
     </tr>
   </table>
   </div>
@@ -60,4 +120,117 @@
   <div class="empty">No stat events found in this timeline.</div>
   {% endif %}
 </div>
+
+{% if has_clips and session.video_url %}
+<script>
+window.FILM_CLIPS = {{ clips_json|safe }};
+window.YT_ID = {{ ("'" ~ youtube_id ~ "'")|safe if youtube_id and session.video_kind == 'youtube' else 'null' }};
+
+(function () {
+  var STAT_EVENTS = {
+    "PTS": ["+2", "+3", "FT Made"],
+    "FG": ["+2", "-2", "+3", "-3"],
+    "3PT": ["+3", "-3"],
+    "FT": ["FT Made", "FT Miss"],
+    "OREB": ["OREB"], "DREB": ["DREB"], "REB": ["OREB", "DREB"],
+    "AST": ["Assist"], "STL": ["Steal"], "BLK": ["Block"], "TO": ["TO"]
+  };
+  var STAT_LABELS = {
+    "PTS": "scoring plays", "FG": "field goal attempts", "3PT": "threes",
+    "FT": "free throws", "OREB": "offensive rebounds", "DREB": "defensive rebounds",
+    "REB": "rebounds", "AST": "assists", "STL": "steals", "BLK": "blocks", "TO": "turnovers"
+  };
+
+  var ytPlayer = null, ytReady = false, queue = [], qi = 0, watcher = null;
+
+  if (window.YT_ID) {
+    var tag = document.createElement("script");
+    tag.src = "https://www.youtube.com/iframe_api";
+    document.head.appendChild(tag);
+    window.onYouTubeIframeAPIReady = function () {
+      ytPlayer = new YT.Player("yt-player", {
+        videoId: window.YT_ID,
+        playerVars: { rel: 0, modestbranding: 1 },
+        events: { onReady: function () { ytReady = true; } }
+      });
+    };
+  }
+
+  function fmt(t) {
+    t = Math.max(0, Math.floor(t));
+    var h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), s = t % 60;
+    var ms = (m < 10 && h ? "0" : "") + m + ":" + (s < 10 ? "0" : "") + s;
+    return h ? h + ":" + ms : ms;
+  }
+
+  function playClip(i) {
+    if (!ytReady || !queue[i]) return;
+    qi = i;
+    highlight();
+    ytPlayer.seekTo(Math.max(0, queue[i].start - 1), true);
+    ytPlayer.playVideo();
+    if (watcher) clearInterval(watcher);
+    watcher = setInterval(function () {
+      if (!ytReady) return;
+      var t = ytPlayer.getCurrentTime();
+      var end = (queue[qi].end || queue[qi].start + 8) + 1;
+      if (t >= end) {
+        if (qi + 1 < queue.length) playClip(qi + 1);
+        else { clearInterval(watcher); watcher = null; ytPlayer.pauseVideo(); }
+      }
+    }, 400);
+  }
+
+  function highlight() {
+    var chips = document.querySelectorAll(".clip-chip");
+    chips.forEach(function (c, i) { c.classList.toggle("active", i === qi); });
+    var counter = document.getElementById("clip-counter");
+    if (counter) counter.textContent = "Clip " + (qi + 1) + " / " + queue.length;
+  }
+
+  function showClips(player, stat) {
+    var events = STAT_EVENTS[stat] || [];
+    queue = window.FILM_CLIPS.filter(function (c) {
+      return events.indexOf(c.event) !== -1 && (!player || c.player === player);
+    });
+    var bar = document.getElementById("clip-bar");
+    var label = document.getElementById("clip-label");
+    var chipBox = document.getElementById("clip-chips");
+    var who = player || "Team";
+    if (!queue.length) {
+      bar.hidden = false;
+      label.textContent = who + " — no " + (STAT_LABELS[stat] || stat) + " in this session";
+      chipBox.innerHTML = "";
+      var counter = document.getElementById("clip-counter");
+      if (counter) counter.textContent = "";
+      return;
+    }
+    var noun = STAT_LABELS[stat] || stat;
+    if (queue.length === 1 && noun.slice(-1) === "s") noun = noun.slice(0, -1);
+    label.textContent = who + " — " + queue.length + " " + noun;
+    chipBox.innerHTML = "";
+    queue.forEach(function (c, i) {
+      var chip = document.createElement(window.YT_ID ? "button" : "span");
+      chip.type = "button";
+      chip.className = "clip-chip";
+      chip.textContent = fmt(c.start) + " · " + c.event;
+      if (window.YT_ID) chip.addEventListener("click", function () { playClip(i); });
+      chipBox.appendChild(chip);
+    });
+    bar.hidden = false;
+    bar.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    if (window.YT_ID) playClip(0); else highlight();
+  }
+
+  document.querySelectorAll(".stat-cell").forEach(function (td) {
+    td.addEventListener("click", function () {
+      showClips(td.dataset.player, td.dataset.stat);
+    });
+  });
+  var prev = document.getElementById("clip-prev"), next = document.getElementById("clip-next");
+  if (prev) prev.addEventListener("click", function () { if (qi > 0) playClip(qi - 1); });
+  if (next) next.addEventListener("click", function () { if (qi + 1 < queue.length) playClip(qi + 1); });
+})();
+</script>
+{% endif %}
 {% endblock %}

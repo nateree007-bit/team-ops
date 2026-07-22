@@ -81,6 +81,8 @@ CREATE TABLE IF NOT EXISTS film_sessions (
     title TEXT NOT NULL,
     session_date TEXT,
     source_file TEXT,
+    video_url TEXT,
+    video_kind TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -137,6 +139,10 @@ def init_db():
             conn.execute("ALTER TABLE tasks ADD COLUMN priority INTEGER DEFAULT 3")
         if "completed_at" not in task_columns:
             conn.execute("ALTER TABLE tasks ADD COLUMN completed_at TEXT")
+        film_columns = {row["name"] for row in conn.execute("PRAGMA table_info(film_sessions)")}
+        if "video_url" not in film_columns:
+            conn.execute("ALTER TABLE film_sessions ADD COLUMN video_url TEXT")
+            conn.execute("ALTER TABLE film_sessions ADD COLUMN video_kind TEXT")
         conn.commit()
     finally:
         conn.close()

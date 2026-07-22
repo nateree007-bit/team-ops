@@ -984,6 +984,70 @@ async def upload_film(title: str = Form(""), file: UploadFile = File(...)):
     return RedirectResponse(f"/film/{session_id}", status_code=303)
 
 
+def _youtube_id(url):
+    if not url:
+        return None
+    m = re.search(
+        r"(?:youtube\.com/(?:watch\?[^#]*?v=|embed/|shorts/|live/)|youtu\.be/)"
+        r"([A-Za-z0-9_-]{6,})",
+        url,
+    )
+    return m.group(1) if m else None
+
+
+def _probe_frameable(url):
+    """Can this URL render inside an iframe on another site? Checks
+    X-Frame-Options / CSP frame-ancestors and login redirects. Hudl's
+    private team video fails this (login wall) and falls back to a link."""
+    try:
+        resp = httpx.get(
+            url,
+            timeout=10,
+            follow_redirects=True,
+            headers={"User-Agent": "Mozilla/5.0"},
+        )
+    except Exception:
+        return False
+    if resp.status_code != 200:
+        return False
+    final_url = str(resp.url).lower()
+    if "login" in final_url or "signin" in final_url:
+        return False
+    xfo = resp.headers.get("x-frame-options", "").lower()
+    if "deny" in xfo or "sameorigin" in xfo:
+        return False
+    csp = resp.headers.get("content-security-policy", "").lower()
+    if "frame-ancestors" in csp:
+        allowed = csp.split("frame-ancestors", 1)[1].split(";")[0]
+        if "*" not in allowed:
+            return False
+    return True
+
+
+@app.post("/film/{session_id}/video")
+def set_film_video(session_id: int, url: str = Form("")):
+    url = url.strip()
+    if url and not url.lower().startswith(("http://", "https://")):
+        url = "https://" + url
+    if not url:
+        kind = None
+        url = None
+    elif _youtube_id(url):
+        kind = "youtube"
+    elif _probe_frameable(url):
+        kind = "iframe"
+    else:
+        kind = "link"
+    conn = db.get_connection()
+    conn.execute(
+        "UPDATE film_sessions SET video_url = ?, video_kind = ? WHERE id = ?",
+        (url, kind, session_id),
+    )
+    conn.commit()
+    conn.close()
+    return RedirectResponse(f"/film/{session_id}", status_code=303)
+
+
 @app.get("/film/{session_id}")
 def film_detail(request: Request, session_id: int):
     conn = db.get_connection()
@@ -991,14 +1055,34 @@ def film_detail(request: Request, session_id: int):
         "SELECT * FROM film_sessions WHERE id = ?", (session_id,)
     ).fetchone()
     rows = conn.execute(
-        "SELECT player, event FROM film_events WHERE session_id = ?", (session_id,)
+        """SELECT player, event, start_time, end_time FROM film_events
+           WHERE session_id = ? ORDER BY (start_time IS NULL), start_time""",
+        (session_id,),
     ).fetchall()
     conn.close()
     lines, totals = _film_box_score(rows)
+    clips = [
+        {
+            "player": r["player"],
+            "event": r["event"],
+            "start": r["start_time"],
+            "end": r["end_time"],
+        }
+        for r in rows
+        if r["start_time"] is not None
+    ]
     return templates.TemplateResponse(
         request,
         "film_detail.html",
-        {"session": session, "lines": lines, "totals": totals, "active": "film"},
+        {
+            "session": session,
+            "lines": lines,
+            "totals": totals,
+            "clips_json": json.dumps(clips).replace("</", "<\\/"),
+            "has_clips": bool(clips),
+            "youtube_id": _youtube_id(session["video_url"]) if session else None,
+            "active": "film",
+        },
     )
 
 
