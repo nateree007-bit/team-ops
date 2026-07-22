@@ -19,12 +19,13 @@
   <h3>Sessions ({{ sessions|length }})</h3>
   {% if sessions %}
   <table>
-    <tr><th>Date</th><th>Title</th><th>Coded events</th></tr>
+    <tr><th>Date</th><th>Title</th><th>Coded events</th><th>Video</th></tr>
     {% for s in sessions %}
     <tr onclick="location.href='/film/{{ s.id }}'" style="cursor:pointer">
       <td>{{ s.session_date or '—' }}</td>
       <td>{{ s.title }}</td>
       <td>{{ s.event_count }}</td>
+      <td>{% if s.video_url %}🎥 attached{% else %}<span class="small" style="color:var(--warn)">none yet</span>{% endif %}</td>
     </tr>
     {% endfor %}
   </table>
