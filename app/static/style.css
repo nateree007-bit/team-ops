@@ -805,3 +805,35 @@ tr.past td { opacity: .45; }
   border-radius: 12px;
   background: #fff;
 }
+
+.sheet-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.sheet-tab {
+  display: inline-block;
+  padding: 8px 16px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  color: var(--muted);
+  background: var(--panel);
+  border: 1px solid var(--glass-border);
+  transition: color .15s var(--ease-out-quart), border-color .15s var(--ease-out-quart), background .15s var(--ease-out-quart);
+}
+
+.sheet-tab:hover {
+  color: var(--text);
+  background: var(--panel-hover);
+  border-color: var(--glass-border-strong);
+}
+
+.sheet-tab.active {
+  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent-strong);
+}

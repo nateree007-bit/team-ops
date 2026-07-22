@@ -3,6 +3,9 @@ import json
 import os
 import re
 import secrets
+import time
+
+import httpx
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -1023,10 +1026,20 @@ def _set_setting(conn, key, value):
     )
 
 
-def _sheet_embed_url(url):
+def _sheet_id(url):
+    """Extract the spreadsheet id from a normal share link (not a
+    published /d/e/2PACX... link, whose id is a publish token)."""
+    if not url or "docs.google.com/spreadsheets" not in url or "/d/e/" in url:
+        return None
+    m = re.search(r"/spreadsheets/(?:u/\d+/)?d/([a-zA-Z0-9_-]+)", url)
+    return m.group(1) if m else None
+
+
+def _sheet_embed_url(url, gid=None):
     """Turn any Google Sheets link into one that renders inside an iframe.
     Published-to-web links (/d/e/2PACX.../pubhtml) are used as-is; normal
-    share links (/d/<id>/edit) get widget params appended."""
+    share links (/d/<id>/edit) get widget params appended. gid selects
+    which worksheet tab opens."""
     if not url:
         return None
     if "docs.google.com/spreadsheets" not in url:
@@ -1035,32 +1048,80 @@ def _sheet_embed_url(url):
         base = url.split("?")[0]
         if "/pubhtml" not in base:
             base = base.rstrip("/") + "/pubhtml"
-        return base + "?widget=true&headers=false"
-    m = re.search(r"/spreadsheets/(?:u/\d+/)?d/([a-zA-Z0-9_-]+)", url)
-    if not m:
+        extra = f"&gid={gid}&single=true" if gid else ""
+        return base + "?widget=true&headers=false" + extra
+    sheet_id = _sheet_id(url)
+    if not sheet_id:
         return None
-    gid = ""
-    gid_m = re.search(r"[#?&]gid=(\d+)", url)
-    if gid_m:
-        gid = "&gid=" + gid_m.group(1)
+    if gid is None:
+        gid_m = re.search(r"[#?&]gid=(\d+)", url)
+        if gid_m:
+            gid = gid_m.group(1)
+    # Tab selection on /edit embeds uses the #gid= fragment, not a query param.
+    frag = f"#gid={gid}" if gid else ""
     return (
-        f"https://docs.google.com/spreadsheets/d/{m.group(1)}/edit"
-        f"?widget=true&headers=false&rm=minimal{gid}"
+        f"https://docs.google.com/spreadsheets/d/{sheet_id}/edit"
+        f"?widget=true&headers=false&rm=minimal{frag}"
     )
 
 
+def _js_unescape(s):
+    s = re.sub(r"\\x([0-9a-fA-F]{2})", lambda m: chr(int(m.group(1), 16)), s)
+    s = re.sub(r"\\u([0-9a-fA-F]{4})", lambda m: chr(int(m.group(1), 16)), s)
+    return s.replace('\\/', "/").replace('\\"', '"').replace("\\\\", "\\")
+
+
+_sheet_tabs_cache = {}
+_SHEET_TABS_TTL = 300  # seconds
+
+
+def _fetch_sheet_tabs(sheet_id):
+    """Scrape the worksheet-tab names/gids from the sheet's htmlview page
+    (available for any link-viewable sheet, no API key). Cached for a few
+    minutes. Returns [] on any failure so the page falls back to a plain
+    embed with Google's own tab bar."""
+    cached = _sheet_tabs_cache.get(sheet_id)
+    if cached and time.time() - cached[0] < _SHEET_TABS_TTL:
+        return cached[1]
+    tabs = []
+    try:
+        resp = httpx.get(
+            f"https://docs.google.com/spreadsheets/d/{sheet_id}/htmlview",
+            timeout=10,
+            follow_redirects=True,
+        )
+        if resp.status_code == 200:
+            for name, gid in re.findall(
+                r'items\.push\(\{name: "((?:\\.|[^"\\])*)",.*?gid: "(\d+)"',
+                resp.text,
+            ):
+                tabs.append({"name": _js_unescape(name), "gid": gid})
+    except Exception:
+        tabs = []
+    _sheet_tabs_cache[sheet_id] = (time.time(), tabs)
+    return tabs
+
+
 @app.get("/recruiting")
-def recruiting(request: Request, invalid: str = ""):
+def recruiting(request: Request, invalid: str = "", gid: str = ""):
     conn = db.get_connection()
     sheet_url = _get_setting(conn, "recruiting_sheet_url")
     conn.close()
+
+    sheet_id = _sheet_id(sheet_url)
+    tabs = _fetch_sheet_tabs(sheet_id) if sheet_id else []
+    known_gids = {t["gid"] for t in tabs}
+    active_gid = gid if gid in known_gids else (tabs[0]["gid"] if tabs else None)
+
     return templates.TemplateResponse(
         request,
         "recruiting.html",
         {
             "active": "recruiting",
             "sheet_url": sheet_url,
-            "embed_url": _sheet_embed_url(sheet_url),
+            "embed_url": _sheet_embed_url(sheet_url, active_gid),
+            "tabs": tabs,
+            "active_gid": active_gid,
             "invalid": invalid == "1",
         },
     )
