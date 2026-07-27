@@ -89,10 +89,20 @@ CREATE TABLE IF NOT EXISTS film_sessions (
 CREATE TABLE IF NOT EXISTS film_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     session_id INTEGER NOT NULL REFERENCES film_sessions(id) ON DELETE CASCADE,
+    part INTEGER NOT NULL DEFAULT 1,
     player TEXT NOT NULL,
     event TEXT NOT NULL,
     start_time REAL,
     end_time REAL
+);
+
+CREATE TABLE IF NOT EXISTS film_videos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id INTEGER NOT NULL REFERENCES film_sessions(id) ON DELETE CASCADE,
+    part INTEGER NOT NULL DEFAULT 1,
+    url TEXT NOT NULL,
+    kind TEXT,
+    UNIQUE(session_id, part)
 );
 
 CREATE TABLE IF NOT EXISTS settings (
@@ -125,6 +135,9 @@ def get_connection():
 def init_db():
     conn = get_connection()
     try:
+        had_film_videos = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='film_videos'"
+        ).fetchone() is not None
         conn.executescript(SCHEMA)
         columns = {row["name"] for row in conn.execute("PRAGMA table_info(players)")}
         if "birthday" not in columns:
@@ -143,6 +156,16 @@ def init_db():
         if "video_url" not in film_columns:
             conn.execute("ALTER TABLE film_sessions ADD COLUMN video_url TEXT")
             conn.execute("ALTER TABLE film_sessions ADD COLUMN video_kind TEXT")
+        film_event_columns = {row["name"] for row in conn.execute("PRAGMA table_info(film_events)")}
+        if "part" not in film_event_columns:
+            conn.execute("ALTER TABLE film_events ADD COLUMN part INTEGER NOT NULL DEFAULT 1")
+        if not had_film_videos:
+            # Move single-video links into the new per-part videos table.
+            conn.execute(
+                """INSERT INTO film_videos (session_id, part, url, kind)
+                   SELECT id, 1, video_url, video_kind FROM film_sessions
+                   WHERE video_url IS NOT NULL AND video_url != ''"""
+            )
         conn.commit()
     finally:
         conn.close()

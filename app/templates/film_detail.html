@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ session.title }} · Team Ops{% endblock %}
 {% block content %}
+{% set multi = parts|length > 1 %}
 <div class="actions-row">
   <h1>{{ session.title }}{% if session.session_date %} <span class="small">{{ session.session_date }}</span>{% endif %}</h1>
   <form class="inline" method="post" action="/film/{{ session.id }}/delete" onsubmit="return confirm('Delete this film session and its stats?')">
@@ -8,66 +9,79 @@
   </form>
 </div>
 
-{% if session.video_url %}
 <div class="panel">
-  {% if session.video_kind == 'youtube' %}
-  <div class="video-embed"><div id="yt-player"></div></div>
-  {% elif session.video_kind == 'iframe' %}
-  <div class="video-embed"><iframe src="{{ session.video_url }}" allowfullscreen title="Session video"></iframe></div>
-  {% else %}
-  <div class="video-link-card">
-    <div>
-      <strong>This video can't play inside the site</strong>
-      <div class="small">Hudl keeps team film behind your Hudl login, so it opens over there instead. Click a stat below to get the exact times to jump to in the Hudl player.</div>
-    </div>
-    <a href="{{ session.video_url }}" target="_blank" rel="noopener"><button type="button">Watch on Hudl ↗</button></a>
+  {% if not has_videos %}
+  <h3>Attach the session video</h3>
+  <p class="small">Paste a <strong>YouTube</strong> link (unlisted works great) to watch here and jump straight to plays when you click a stat — or a <strong>Hudl</strong> link to open the film on Hudl with the play times listed for you.</p>
+  {% endif %}
+
+  {% if multi %}
+  <div class="part-btns">
+    {% for p in parts %}
+    <button type="button" class="part-btn" data-part="{{ p }}">Part {{ p }}{% if videos_by_part.get(p) %} 🎥{% endif %}</button>
+    {% endfor %}
   </div>
   {% endif %}
 
+  {% for p in parts %}
+  {% set v = videos_by_part.get(p) %}
+  <div class="video-part" data-part="{{ p }}" hidden>
+    {% if v %}
+    {% if v.kind == 'youtube' %}
+    <div class="video-embed"><div id="yt-player-{{ p }}"></div></div>
+    {% elif v.kind == 'iframe' %}
+    <div class="video-embed"><iframe src="{{ v.url }}" allowfullscreen title="Session video{% if multi %} part {{ p }}{% endif %}"></iframe></div>
+    {% else %}
+    <div class="video-link-card">
+      <div>
+        <strong>This video can't play inside the site</strong>
+        <div class="small">Hudl keeps team film behind your Hudl login, so it opens over there instead. Click a stat below to get the exact times to jump to in the Hudl player.</div>
+      </div>
+      <a href="{{ v.url }}" target="_blank" rel="noopener"><button type="button">Watch on Hudl ↗</button></a>
+    </div>
+    {% endif %}
+    <details class="change-link" style="margin-top:10px">
+      <summary>Change video link{% if multi %} for part {{ p }}{% endif %}</summary>
+      <form method="post" action="/film/{{ session.id }}/video" class="change-link-form" style="position:static">
+        <input type="hidden" name="part" value="{{ p }}">
+        <input name="url" placeholder="Paste a new link (or leave empty to remove)" value="{{ v.url }}">
+        <button type="submit">Save</button>
+      </form>
+    </details>
+    {% else %}
+    <form method="post" action="/film/{{ session.id }}/video">
+      <input type="hidden" name="part" value="{{ p }}">
+      <div class="form-grid">
+        <div><label>Video link{% if multi %} for part {{ p }}{% endif %}</label><input name="url" placeholder="https://www.youtube.com/watch?v=... or https://www.hudl.com/..." required></div>
+      </div>
+      <div style="margin-top:12px"><button type="submit">Attach video</button></div>
+    </form>
+    {% endif %}
+  </div>
+  {% endfor %}
+
+  {% if has_videos %}
   <div id="clip-bar" class="clip-bar" hidden>
     <div class="clip-bar-head">
       <strong id="clip-label"></strong>
-      {% if session.video_kind == 'youtube' %}
       <span>
-        <button type="button" class="clip-nav" id="clip-prev">&larr; Prev</button>
+        <button type="button" class="clip-nav" id="clip-prev" hidden>&larr; Prev</button>
         <span id="clip-counter" class="small"></span>
-        <button type="button" class="clip-nav" id="clip-next">Next &rarr;</button>
+        <button type="button" class="clip-nav" id="clip-next" hidden>Next &rarr;</button>
       </span>
-      {% else %}
-      <span class="small">Jump to these times in the video:</span>
-      {% endif %}
     </div>
     <div id="clip-chips" class="clip-chips"></div>
   </div>
-
-  <details class="change-link" style="margin-top:10px">
-    <summary>Change video link</summary>
-    <form method="post" action="/film/{{ session.id }}/video" class="change-link-form" style="position:static">
-      <input name="url" placeholder="Paste a new link (or leave empty to remove)" value="{{ session.video_url }}">
-      <button type="submit">Save</button>
-    </form>
-  </details>
+  {% endif %}
 </div>
-{% else %}
-<div class="panel">
-  <h3>Attach the session video</h3>
-  <p class="small">Paste a <strong>YouTube</strong> link (unlisted works great) to watch here and jump straight to plays when you click a stat — or a <strong>Hudl</strong> link to open the film on Hudl with the play times listed for you.</p>
-  <form method="post" action="/film/{{ session.id }}/video">
-    <div class="form-grid">
-      <div><label>Video link</label><input name="url" placeholder="https://www.youtube.com/watch?v=... or https://www.hudl.com/..." required></div>
-    </div>
-    <div style="margin-top:12px"><button type="submit">Attach video</button></div>
-  </form>
-</div>
-{% endif %}
 
 <div class="panel">
-  <h3>Box score — from the coded timeline</h3>
-  {% if has_clips and session.video_url %}
-  <p class="small">Click any stat to pull up those plays{% if session.video_kind == 'youtube' %} — the video jumps through them automatically{% endif %}.</p>
+  <h3>Box score — from the coded timeline{% if multi %}s{% endif %}</h3>
+  {% if has_clips and has_videos %}
+  <p class="small">Click any stat to pull up those plays — the video jumps through them automatically when it's a YouTube link.</p>
   {% endif %}
   {% if lines %}
-  {% set clickable = has_clips and session.video_url %}
+  {% set clickable = has_clips and has_videos %}
   {% macro stat_cell(player, stat, content) -%}
   <td {% if clickable %}class="stat-cell" data-player="{{ player }}" data-stat="{{ stat }}" title="Show these plays"{% endif %}>{{ content }}</td>
   {%- endmacro %}
@@ -115,16 +129,45 @@
     </tr>
   </table>
   </div>
-  <p class="small" style="margin-bottom:0">PTS from +2/+3/FT Made · shooting splits from made vs. missed codes · stats reflect what was coded in Sportscode.</p>
+  <p class="small" style="margin-bottom:0">PTS from +2/+3/FT Made · shooting splits from made vs. missed codes · plays coded on both a team row and a player row are counted once.</p>
   {% else %}
   <div class="empty">No stat events found in this timeline.</div>
   {% endif %}
 </div>
 
-{% if has_clips and session.video_url %}
+<div class="panel">
+  <h3>Timelines for this day</h3>
+  <table>
+    <tr><th>Part</th><th>Coded events</th><th>Video</th>{% if multi %}<th></th>{% endif %}</tr>
+    {% for p in parts %}
+    <tr>
+      <td>Part {{ p }}</td>
+      <td>{{ part_event_counts.get(p, 0) }}</td>
+      <td>{% if videos_by_part.get(p) %}🎥 attached{% else %}<span class="small" style="color:var(--warn)">none yet</span>{% endif %}</td>
+      {% if multi %}
+      <td>
+        <form class="inline" method="post" action="/film/{{ session.id }}/parts/{{ p }}/delete" onsubmit="return confirm('Remove part {{ p }} — its stats and video link?')">
+          <button type="submit" class="danger">Remove</button>
+        </form>
+      </td>
+      {% endif %}
+    </tr>
+    {% endfor %}
+  </table>
+  <details style="margin-top:12px">
+    <summary class="small" style="cursor:pointer">Recording got cut? Add the second timeline for this day</summary>
+    <form method="post" action="/film/{{ session.id }}/upload-part" enctype="multipart/form-data" style="margin-top:10px">
+      <input type="file" name="file" accept=".SCTimeline,application/json" required>
+      <div style="margin-top:12px"><button type="submit">Add timeline as part {{ parts[-1] + 1 }}</button></div>
+    </form>
+    <p class="small">Upload the .SCTimeline from the second recording — its stats get added to this day's box score, and you can attach that recording's video as its own part.</p>
+  </details>
+</div>
+
 <script>
 window.FILM_CLIPS = {{ clips_json|safe }};
-window.YT_ID = {{ ("'" ~ youtube_id ~ "'")|safe if youtube_id and session.video_kind == 'youtube' else 'null' }};
+window.FILM_VIDEOS = {{ videos_json_str|safe }};
+window.MULTI_PART = {{ 'true' if multi else 'false' }};
 
 (function () {
   var STAT_EVENTS = {
@@ -141,17 +184,54 @@ window.YT_ID = {{ ("'" ~ youtube_id ~ "'")|safe if youtube_id and session.video_
     "REB": "rebounds", "AST": "assists", "STL": "steals", "BLK": "blocks", "TO": "turnovers"
   };
 
-  var ytPlayer = null, ytReady = false, queue = [], qi = 0, watcher = null;
+  var players = {}, ready = {}, queue = [], qi = 0, watcher = null;
+  var ytParts = Object.keys(window.FILM_VIDEOS).filter(function (p) {
+    return window.FILM_VIDEOS[p].kind === "youtube";
+  });
+  var anyYt = ytParts.length > 0;
 
-  if (window.YT_ID) {
+  function partHasPlayback(p) {
+    var v = window.FILM_VIDEOS[String(p)];
+    return !!(v && v.kind === "youtube");
+  }
+
+  function showPart(p) {
+    p = String(p);
+    document.querySelectorAll(".video-part").forEach(function (el) {
+      el.hidden = el.dataset.part !== p;
+    });
+    document.querySelectorAll(".part-btn").forEach(function (b) {
+      b.classList.toggle("active", b.dataset.part === p);
+    });
+    Object.keys(players).forEach(function (k) {
+      if (k !== p && ready[k]) players[k].pauseVideo();
+    });
+  }
+
+  document.querySelectorAll(".part-btn").forEach(function (b) {
+    b.addEventListener("click", function () { showPart(b.dataset.part); });
+  });
+
+  // Start on the first part that has a video, else the first part.
+  var firstParts = document.querySelectorAll(".video-part");
+  var initial = null;
+  firstParts.forEach(function (el) {
+    if (initial === null && window.FILM_VIDEOS[el.dataset.part]) initial = el.dataset.part;
+  });
+  if (initial === null && firstParts.length) initial = firstParts[0].dataset.part;
+  if (initial !== null) showPart(initial);
+
+  if (anyYt) {
     var tag = document.createElement("script");
     tag.src = "https://www.youtube.com/iframe_api";
     document.head.appendChild(tag);
     window.onYouTubeIframeAPIReady = function () {
-      ytPlayer = new YT.Player("yt-player", {
-        videoId: window.YT_ID,
-        playerVars: { rel: 0, modestbranding: 1 },
-        events: { onReady: function () { ytReady = true; } }
+      ytParts.forEach(function (p) {
+        players[p] = new YT.Player("yt-player-" + p, {
+          videoId: window.FILM_VIDEOS[p].ytId,
+          playerVars: { rel: 0, modestbranding: 1 },
+          events: { onReady: function () { ready[p] = true; } }
+        });
       });
     };
   }
@@ -164,19 +244,23 @@ window.YT_ID = {{ ("'" ~ youtube_id ~ "'")|safe if youtube_id and session.video_
   }
 
   function playClip(i) {
-    if (!ytReady || !queue[i]) return;
+    if (!queue[i]) return;
     qi = i;
     highlight();
-    ytPlayer.seekTo(Math.max(0, queue[i].start - 1), true);
-    ytPlayer.playVideo();
+    var p = String(queue[i].part);
+    showPart(p);
+    if (!partHasPlayback(p) || !ready[p]) return;
+    players[p].seekTo(Math.max(0, queue[i].start - 1), true);
+    players[p].playVideo();
     if (watcher) clearInterval(watcher);
     watcher = setInterval(function () {
-      if (!ytReady) return;
-      var t = ytPlayer.getCurrentTime();
+      var cp = String(queue[qi].part);
+      if (!ready[cp]) return;
+      var t = players[cp].getCurrentTime();
       var end = (queue[qi].end || queue[qi].start + 8) + 1;
       if (t >= end) {
         if (qi + 1 < queue.length) playClip(qi + 1);
-        else { clearInterval(watcher); watcher = null; ytPlayer.pauseVideo(); }
+        else { clearInterval(watcher); watcher = null; players[cp].pauseVideo(); }
       }
     }, 400);
   }
@@ -185,7 +269,7 @@ window.YT_ID = {{ ("'" ~ youtube_id ~ "'")|safe if youtube_id and session.video_
     var chips = document.querySelectorAll(".clip-chip");
     chips.forEach(function (c, i) { c.classList.toggle("active", i === qi); });
     var counter = document.getElementById("clip-counter");
-    if (counter) counter.textContent = "Clip " + (qi + 1) + " / " + queue.length;
+    if (counter) counter.textContent = anyYt ? "Clip " + (qi + 1) + " / " + queue.length : "";
   }
 
   function showClips(player, stat) {
@@ -194,6 +278,7 @@ window.YT_ID = {{ ("'" ~ youtube_id ~ "'")|safe if youtube_id and session.video_
       return events.indexOf(c.event) !== -1 && (!player || c.player === player);
     });
     var bar = document.getElementById("clip-bar");
+    if (!bar) return;
     var label = document.getElementById("clip-label");
     var chipBox = document.getElementById("clip-chips");
     var who = player || "Team";
@@ -210,16 +295,20 @@ window.YT_ID = {{ ("'" ~ youtube_id ~ "'")|safe if youtube_id and session.video_
     label.textContent = who + " — " + queue.length + " " + noun;
     chipBox.innerHTML = "";
     queue.forEach(function (c, i) {
-      var chip = document.createElement(window.YT_ID ? "button" : "span");
+      var canPlay = partHasPlayback(c.part);
+      var chip = document.createElement(canPlay ? "button" : "span");
       chip.type = "button";
       chip.className = "clip-chip";
-      chip.textContent = fmt(c.start) + " · " + c.event;
-      if (window.YT_ID) chip.addEventListener("click", function () { playClip(i); });
+      chip.textContent = (window.MULTI_PART ? "P" + c.part + " · " : "") + fmt(c.start) + " · " + c.event;
+      if (canPlay) chip.addEventListener("click", function () { playClip(i); });
       chipBox.appendChild(chip);
     });
+    var prev = document.getElementById("clip-prev"), next = document.getElementById("clip-next");
+    if (prev) prev.hidden = !anyYt;
+    if (next) next.hidden = !anyYt;
     bar.hidden = false;
     bar.scrollIntoView({ behavior: "smooth", block: "nearest" });
-    if (window.YT_ID) playClip(0); else highlight();
+    if (partHasPlayback(queue[0].part)) playClip(0); else highlight();
   }
 
   document.querySelectorAll(".stat-cell").forEach(function (td) {
@@ -232,5 +321,4 @@ window.YT_ID = {{ ("'" ~ youtube_id ~ "'")|safe if youtube_id and session.video_
   if (next) next.addEventListener("click", function () { if (qi + 1 < queue.length) playClip(qi + 1); });
 })();
 </script>
-{% endif %}
 {% endblock %}

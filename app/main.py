@@ -839,7 +839,42 @@ FILM_PLAYER_ALIASES = {
     "IL": "Isaiah",
     "JA": "Jamal",
     "DanielMich": "Daniel",
+    "cedric": "Cedric",
+    "DJdric": "Cedric",
 }
+
+
+def _dedupe_film_events(rows):
+    """Drop double-coded plays before computing stats or clips.
+
+    Coders often tag the same play twice — once on the team row (White/Blue)
+    and once on the player's own row — a few seconds apart with overlapping
+    clip windows, which counted every made FT (and some other stats) twice.
+    Two events are the same play when they share part+player+stat and their
+    clip windows overlap. Events with identical start AND end came from one
+    instance labeled multiple times on purpose (e.g. a 2-for-2 trip to the
+    line) and are kept.
+    """
+    kept_windows: dict[tuple, list] = {}
+    out = []
+    for r in sorted(rows, key=lambda r: (r["part"], r["start_time"] is None, r["start_time"] or 0)):
+        s = r["start_time"]
+        if s is not None:
+            e = r["end_time"] if r["end_time"] is not None else s + 8
+            key = (r["part"], r["player"].strip().lower(), r["event"])
+            windows = kept_windows.setdefault(key, [])
+            dup = False
+            for ks, ke in windows:
+                if s == ks and e == ke:
+                    continue
+                if s <= ke and ks <= e:
+                    dup = True
+                    break
+            if dup:
+                continue
+            windows.append((s, e))
+        out.append(r)
+    return out
 
 
 def _parse_sctimeline(raw: bytes):
@@ -943,9 +978,11 @@ def _film_box_score(rows):
 def list_film(request: Request):
     conn = db.get_connection()
     sessions = conn.execute(
-        """SELECT film_sessions.*, COUNT(film_events.id) AS event_count
-           FROM film_sessions LEFT JOIN film_events ON film_events.session_id = film_sessions.id
-           GROUP BY film_sessions.id
+        """SELECT film_sessions.*,
+               (SELECT COUNT(*) FROM film_events WHERE film_events.session_id = film_sessions.id) AS event_count,
+               (SELECT COUNT(DISTINCT part) FROM film_events WHERE film_events.session_id = film_sessions.id) AS part_count,
+               (SELECT COUNT(*) FROM film_videos WHERE film_videos.session_id = film_sessions.id) AS video_count
+           FROM film_sessions
            ORDER BY (session_date IS NULL), session_date DESC, created_at DESC"""
     ).fetchall()
     conn.close()
@@ -976,9 +1013,50 @@ async def upload_film(title: str = Form(""), file: UploadFile = File(...)):
     session_id = cur.lastrowid
     for e in events:
         conn.execute(
-            "INSERT INTO film_events (session_id, player, event, start_time, end_time) VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO film_events (session_id, part, player, event, start_time, end_time) VALUES (?, 1, ?, ?, ?, ?)",
             (session_id, e["player"], e["event"], e["start"], e["end"]),
         )
+    conn.commit()
+    conn.close()
+    return RedirectResponse(f"/film/{session_id}", status_code=303)
+
+
+@app.post("/film/{session_id}/upload-part")
+async def upload_film_part(session_id: int, file: UploadFile = File(...)):
+    """Add another timeline to an existing day (recording got cut in two)."""
+    raw = await file.read()
+    try:
+        _, events = _parse_sctimeline(raw)
+    except (json.JSONDecodeError, UnicodeDecodeError, AttributeError, TypeError):
+        return Response(
+            "Couldn't parse that file as a Sportscode timeline (.SCTimeline). "
+            "Make sure you're uploading the .SCTimeline file from inside the package.",
+            media_type="text/plain",
+            status_code=400,
+        )
+    conn = db.get_connection()
+    next_part = conn.execute(
+        """SELECT COALESCE(MAX(part), 0) + 1 FROM (
+               SELECT part FROM film_events WHERE session_id = ?
+               UNION ALL
+               SELECT part FROM film_videos WHERE session_id = ?)""",
+        (session_id, session_id),
+    ).fetchone()[0]
+    for e in events:
+        conn.execute(
+            "INSERT INTO film_events (session_id, part, player, event, start_time, end_time) VALUES (?, ?, ?, ?, ?, ?)",
+            (session_id, next_part, e["player"], e["event"], e["start"], e["end"]),
+        )
+    conn.commit()
+    conn.close()
+    return RedirectResponse(f"/film/{session_id}", status_code=303)
+
+
+@app.post("/film/{session_id}/parts/{part}/delete")
+def delete_film_part(session_id: int, part: int):
+    conn = db.get_connection()
+    conn.execute("DELETE FROM film_events WHERE session_id = ? AND part = ?", (session_id, part))
+    conn.execute("DELETE FROM film_videos WHERE session_id = ? AND part = ?", (session_id, part))
     conn.commit()
     conn.close()
     return RedirectResponse(f"/film/{session_id}", status_code=303)
@@ -1025,24 +1103,27 @@ def _probe_frameable(url):
 
 
 @app.post("/film/{session_id}/video")
-def set_film_video(session_id: int, url: str = Form("")):
+def set_film_video(session_id: int, url: str = Form(""), part: int = Form(1)):
     url = url.strip()
     if url and not url.lower().startswith(("http://", "https://")):
         url = "https://" + url
-    if not url:
-        kind = None
-        url = None
-    elif _youtube_id(url):
-        kind = "youtube"
-    elif _probe_frameable(url):
-        kind = "iframe"
-    else:
-        kind = "link"
     conn = db.get_connection()
-    conn.execute(
-        "UPDATE film_sessions SET video_url = ?, video_kind = ? WHERE id = ?",
-        (url, kind, session_id),
-    )
+    if not url:
+        conn.execute(
+            "DELETE FROM film_videos WHERE session_id = ? AND part = ?", (session_id, part)
+        )
+    else:
+        if _youtube_id(url):
+            kind = "youtube"
+        elif _probe_frameable(url):
+            kind = "iframe"
+        else:
+            kind = "link"
+        conn.execute(
+            """INSERT INTO film_videos (session_id, part, url, kind) VALUES (?, ?, ?, ?)
+               ON CONFLICT(session_id, part) DO UPDATE SET url = excluded.url, kind = excluded.kind""",
+            (session_id, part, url, kind),
+        )
     conn.commit()
     conn.close()
     return RedirectResponse(f"/film/{session_id}", status_code=303)
@@ -1054,15 +1135,39 @@ def film_detail(request: Request, session_id: int):
     session = conn.execute(
         "SELECT * FROM film_sessions WHERE id = ?", (session_id,)
     ).fetchone()
-    rows = conn.execute(
-        """SELECT player, event, start_time, end_time FROM film_events
-           WHERE session_id = ? ORDER BY (start_time IS NULL), start_time""",
+    rows = [
+        dict(r)
+        for r in conn.execute(
+            """SELECT part, player, event, start_time, end_time FROM film_events
+               WHERE session_id = ? ORDER BY part, (start_time IS NULL), start_time""",
+            (session_id,),
+        )
+    ]
+    videos = conn.execute(
+        "SELECT part, url, kind FROM film_videos WHERE session_id = ? ORDER BY part",
         (session_id,),
     ).fetchall()
     conn.close()
+
+    # Canonicalize player spelling (label groups sometimes differ in case
+    # from row names, e.g. "cedric" vs "Cedric") so one player is one line.
+    # Aliases apply here too so sessions uploaded before an alias was added
+    # get fixed without re-uploading.
+    canonical: dict[str, str] = {}
+    for r in rows:
+        r["player"] = FILM_PLAYER_ALIASES.get(r["player"], r["player"])
+    for r in rows:
+        low = r["player"].strip().lower()
+        if low not in canonical or (canonical[low].islower() and not r["player"].islower()):
+            canonical[low] = r["player"].strip()
+    for r in rows:
+        r["player"] = canonical[r["player"].strip().lower()]
+
+    rows = _dedupe_film_events(rows)
     lines, totals = _film_box_score(rows)
     clips = [
         {
+            "part": r["part"],
             "player": r["player"],
             "event": r["event"],
             "start": r["start_time"],
@@ -1071,6 +1176,19 @@ def film_detail(request: Request, session_id: int):
         for r in rows
         if r["start_time"] is not None
     ]
+    event_parts = sorted({r["part"] for r in rows})
+    video_parts = sorted({v["part"] for v in videos})
+    parts = sorted(set(event_parts) | set(video_parts)) or [1]
+    part_event_counts = {p: sum(1 for r in rows if r["part"] == p) for p in parts}
+    videos_by_part = {v["part"]: v for v in videos}
+    videos_json = {
+        str(v["part"]): {
+            "kind": v["kind"],
+            "url": v["url"],
+            "ytId": _youtube_id(v["url"]) if v["kind"] == "youtube" else None,
+        }
+        for v in videos
+    }
     return templates.TemplateResponse(
         request,
         "film_detail.html",
@@ -1080,7 +1198,11 @@ def film_detail(request: Request, session_id: int):
             "totals": totals,
             "clips_json": json.dumps(clips).replace("</", "<\\/"),
             "has_clips": bool(clips),
-            "youtube_id": _youtube_id(session["video_url"]) if session else None,
+            "parts": parts,
+            "part_event_counts": part_event_counts,
+            "videos_by_part": videos_by_part,
+            "videos_json_str": json.dumps(videos_json).replace("</", "<\\/"),
+            "has_videos": bool(videos),
             "active": "film",
         },
     )
