@@ -943,7 +943,10 @@ tr.past td { opacity: .45; }
 
 button.clip-chip { cursor: pointer; }
 
-button.clip-chip:hover {
+a.clip-chip { text-decoration: none; cursor: pointer; }
+
+button.clip-chip:hover,
+a.clip-chip:hover {
   color: var(--text);
   border-color: var(--glass-border-strong);
 }

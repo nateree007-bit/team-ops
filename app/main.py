@@ -947,6 +947,14 @@ def _fmt_clip_time(t) -> str:
     return f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
 
 
+FILM_SESSION_TYPES = ("5v5", "3v3", "other")
+
+
+def _norm_session_type(v: str):
+    v = (v or "").strip().lower()
+    return v if v in FILM_SESSION_TYPES else None
+
+
 def _parse_sctimeline(raw: bytes):
     """Parse a .SCTimeline (JSON) export. Returns (session_date, events)
     where events are dicts of player/event/start/end for stat labels only."""
@@ -1146,8 +1154,92 @@ def list_film(request: Request):
     )
 
 
+_FILM_STAT_KEYS = [
+    "pts", "fgm", "fga", "threes_made", "threes_att", "ft_made", "ft_att",
+    "oreb", "dreb", "reb", "ast", "stl", "blk", "to",
+]
+
+
+@app.get("/film/stats")
+def film_player_stats(request: Request, type: str = ""):
+    t = _norm_session_type(type) or ""
+    conn = db.get_connection()
+    sessions = [
+        dict(s)
+        for s in conn.execute(
+            """SELECT id, title, session_date, session_type FROM film_sessions
+               ORDER BY (session_date IS NULL), session_date DESC, created_at DESC"""
+        )
+    ]
+    for s in sessions:
+        s["type"] = _norm_session_type(s["session_type"]) or "other"
+    type_counts = {k: sum(1 for s in sessions if s["type"] == k) for k in FILM_SESSION_TYPES}
+    if t:
+        sessions = [s for s in sessions if s["type"] == t]
+
+    all_rows = []
+    for s in sessions:
+        kept, _ = _load_film_events(conn, s["id"])
+        for r in kept:
+            r["session_id"] = s["id"]
+            all_rows.append(r)
+    conn.close()
+
+    # Spelling can differ between sessions ("cedric" fixed in one, not
+    # another) — canonicalize across all of them so one player is one line.
+    canonical: dict[str, str] = {}
+    for r in all_rows:
+        low = r["player"].strip().lower()
+        if low not in canonical or (canonical[low].islower() and not r["player"].islower()):
+            canonical[low] = r["player"].strip()
+    for r in all_rows:
+        r["player"] = canonical[r["player"].strip().lower()]
+
+    lines, totals = _film_box_score(all_rows)
+
+    games = {}
+    counts: dict[str, dict] = {}
+    for r in all_rows:
+        games.setdefault(r["player"], set()).add(r["session_id"])
+        per = counts.setdefault(r["player"], {}).setdefault(str(r["session_id"]), {})
+        per[r["event"]] = per.get(r["event"], 0) + 1
+    for l in lines:
+        l["gp"] = len(games.get(l["player"], ()))
+        for k in _FILM_STAT_KEYS:
+            l["avg_" + k] = round(l[k] / l["gp"], 1) if l["gp"] else 0
+    totals["gp"] = len({r["session_id"] for r in all_rows})
+    for k in _FILM_STAT_KEYS:
+        totals["avg_" + k] = round(totals[k] / totals["gp"], 1) if totals["gp"] else 0
+    avg_lines = sorted(lines, key=lambda x: (-x["avg_pts"], x["player"].lower()))
+
+    sessions_meta = {
+        str(s["id"]): {
+            "label": ((s["session_date"] + " · ") if s["session_date"] else "") + s["title"],
+        }
+        for s in sessions
+    }
+    return templates.TemplateResponse(
+        request,
+        "film_stats.html",
+        {
+            "lines": lines,
+            "avg_lines": avg_lines,
+            "totals": totals,
+            "type_filter": t,
+            "type_counts": type_counts,
+            "session_count": len(sessions),
+            "stats_json": json.dumps({"sessions": sessions_meta, "counts": counts}).replace(
+                "</", "<\\/"
+            ),
+            "active": "film",
+        },
+    )
+
+
 @app.post("/film/upload")
-async def upload_film(title: str = Form(""), file: UploadFile = File(...)):
+async def upload_film(
+    title: str = Form(""), session_type: str = Form(""), file: UploadFile = File(...)
+):
     raw = await file.read()
     try:
         title_hint, session_date, events = _parse_film_file(file.filename, raw)
@@ -1162,8 +1254,8 @@ async def upload_film(title: str = Form(""), file: UploadFile = File(...)):
     clean_title = title.strip() or title_hint or (file.filename or "Untitled session").rsplit(".", 1)[0]
     conn = db.get_connection()
     cur = conn.execute(
-        "INSERT INTO film_sessions (title, session_date, source_file) VALUES (?, ?, ?)",
-        (clean_title, session_date, file.filename),
+        "INSERT INTO film_sessions (title, session_date, session_type, source_file) VALUES (?, ?, ?, ?)",
+        (clean_title, session_date, _norm_session_type(session_type), file.filename),
     )
     session_id = cur.lastrowid
     for e in events:
@@ -1208,7 +1300,12 @@ async def upload_film_part(session_id: int, file: UploadFile = File(...)):
 
 
 @app.post("/film/{session_id}/edit")
-def edit_film_session(session_id: int, title: str = Form(""), session_date: str = Form("")):
+def edit_film_session(
+    session_id: int,
+    title: str = Form(""),
+    session_date: str = Form(""),
+    session_type: str = Form(""),
+):
     title = title.strip()
     session_date = session_date.strip()
     if session_date:
@@ -1220,8 +1317,8 @@ def edit_film_session(session_id: int, title: str = Form(""), session_date: str 
     if title:
         conn.execute("UPDATE film_sessions SET title = ? WHERE id = ?", (title, session_id))
     conn.execute(
-        "UPDATE film_sessions SET session_date = ? WHERE id = ?",
-        (session_date or None, session_id),
+        "UPDATE film_sessions SET session_date = ?, session_type = ? WHERE id = ?",
+        (session_date or None, _norm_session_type(session_type), session_id),
     )
     conn.commit()
     conn.close()
@@ -1336,7 +1433,7 @@ def set_film_video(session_id: int, url: str = Form(""), part: int = Form(1)):
 
 
 @app.get("/film/{session_id}")
-def film_detail(request: Request, session_id: int):
+def film_detail(request: Request, session_id: int, player: str = "", stat: str = ""):
     conn = db.get_connection()
     session = conn.execute(
         "SELECT * FROM film_sessions WHERE id = ?", (session_id,)
@@ -1397,6 +1494,7 @@ def film_detail(request: Request, session_id: int):
             "totals": totals,
             "clips_json": json.dumps(clips).replace("</", "<\\/"),
             "has_clips": bool(clips),
+            "auto_clip_json": json.dumps({"player": player, "stat": stat} if stat else None).replace("</", "<\\/"),
             "dup_pending": dup_pending,
             "dup_resolved": dup_resolved,
             "parts": parts,

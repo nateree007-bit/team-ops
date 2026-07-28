@@ -10,11 +10,17 @@
   </form>
 </div>
 
+{% set stype = session.session_type or 'other' %}
 <details class="change-link" style="margin-bottom:14px">
-  <summary>Edit title or date</summary>
+  <summary>Edit title, date or type <span class="small">({{ 'Other' if stype == 'other' else stype }})</span></summary>
   <form method="post" action="/film/{{ session.id }}/edit" class="change-link-form" style="position:static">
     <input name="title" value="{{ session.title }}" placeholder="Session title" required>
     <input type="date" name="session_date" value="{{ session.session_date or '' }}" title="Leave empty for no date">
+    <select name="session_type">
+      <option value="5v5" {% if stype == '5v5' %}selected{% endif %}>5v5</option>
+      <option value="3v3" {% if stype == '3v3' %}selected{% endif %}>3v3</option>
+      <option value="other" {% if stype == 'other' %}selected{% endif %}>Other</option>
+    </select>
     <button type="submit">Save</button>
   </form>
 </details>
@@ -234,6 +240,7 @@
 window.FILM_CLIPS = {{ clips_json|safe }};
 window.FILM_VIDEOS = {{ videos_json_str|safe }};
 window.MULTI_PART = {{ 'true' if multi else 'false' }};
+window.AUTO_CLIP = {{ auto_clip_json|safe }};
 
 (function () {
   var STAT_EVENTS = {
@@ -296,7 +303,10 @@ window.MULTI_PART = {{ 'true' if multi else 'false' }};
         players[p] = new YT.Player("yt-player-" + p, {
           videoId: window.FILM_VIDEOS[p].ytId,
           playerVars: { rel: 0, modestbranding: 1 },
-          events: { onReady: function () { ready[p] = true; } }
+          events: { onReady: function () {
+            ready[p] = true;
+            if (queue.length && !watcher && String(queue[qi].part) === p && partHasPlayback(p)) playClip(qi);
+          } }
         });
       });
     };
@@ -385,6 +395,10 @@ window.MULTI_PART = {{ 'true' if multi else 'false' }};
   var prev = document.getElementById("clip-prev"), next = document.getElementById("clip-next");
   if (prev) prev.addEventListener("click", function () { if (qi > 0) playClip(qi - 1); });
   if (next) next.addEventListener("click", function () { if (qi + 1 < queue.length) playClip(qi + 1); });
+
+  if (window.AUTO_CLIP && window.AUTO_CLIP.stat) {
+    showClips(window.AUTO_CLIP.player || "", window.AUTO_CLIP.stat);
+  }
 })();
 </script>
 {% endblock %}

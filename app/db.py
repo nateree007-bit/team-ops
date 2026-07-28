@@ -80,6 +80,7 @@ CREATE TABLE IF NOT EXISTS film_sessions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     title TEXT NOT NULL,
     session_date TEXT,
+    session_type TEXT,
     source_file TEXT,
     video_url TEXT,
     video_kind TEXT,
@@ -157,6 +158,8 @@ def init_db():
         if "video_url" not in film_columns:
             conn.execute("ALTER TABLE film_sessions ADD COLUMN video_url TEXT")
             conn.execute("ALTER TABLE film_sessions ADD COLUMN video_kind TEXT")
+        if "session_type" not in film_columns:
+            conn.execute("ALTER TABLE film_sessions ADD COLUMN session_type TEXT")
         film_event_columns = {row["name"] for row in conn.execute("PRAGMA table_info(film_events)")}
         if "part" not in film_event_columns:
             conn.execute("ALTER TABLE film_events ADD COLUMN part INTEGER NOT NULL DEFAULT 1")

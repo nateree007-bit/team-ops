@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+{% set back_href, back_label = '/film', 'Film' %}
+{% block title %}Player Stats · Team Ops{% endblock %}
+{% block content %}
+<h1>Player stats</h1>
+<p class="small">Every coded session combined{% if type_filter %} — showing <strong>{{ 'Other' if type_filter == 'other' else type_filter }}</strong> only{% endif %}. Click any stat to see which sessions it came from and jump straight to those plays on video.</p>
+
+<div class="part-btns">
+  <a href="/film/stats"><button type="button" class="part-btn {{ 'active' if not type_filter }}">All ({{ type_counts['5v5'] + type_counts['3v3'] + type_counts['other'] }})</button></a>
+  <a href="/film/stats?type=5v5"><button type="button" class="part-btn {{ 'active' if type_filter == '5v5' }}">5v5 ({{ type_counts['5v5'] }})</button></a>
+  <a href="/film/stats?type=3v3"><button type="button" class="part-btn {{ 'active' if type_filter == '3v3' }}">3v3 ({{ type_counts['3v3'] }})</button></a>
+  <a href="/film/stats?type=other"><button type="button" class="part-btn {{ 'active' if type_filter == 'other' }}">Other ({{ type_counts['other'] }})</button></a>
+</div>
+
+<div id="clip-bar" class="clip-bar" hidden style="margin-bottom:16px">
+  <div class="clip-bar-head"><strong id="clip-label"></strong></div>
+  <div id="clip-chips" class="clip-chips"></div>
+</div>
+
+{% if lines %}
+{% macro stat_cell(player, stat, content) -%}
+<td class="stat-cell" data-player="{{ player }}" data-stat="{{ stat }}" title="Show the sessions these came from">{{ content }}</td>
+{%- endmacro %}
+
+<div class="panel">
+  <h3>Totals</h3>
+  <div style="overflow-x:auto">
+  <table>
+    <tr>
+      <th>Player</th><th>GP</th><th>PTS</th><th>FG</th><th>FG%</th><th>3PT</th><th>3P%</th><th>FT</th><th>FT%</th>
+      <th>OREB</th><th>DREB</th><th>REB</th><th>AST</th><th>STL</th><th>BLK</th><th>TO</th>
+    </tr>
+    {% for l in lines %}
+    <tr>
+      <td><strong>{{ l.player }}</strong></td>
+      <td>{{ l.gp }}</td>
+      {{ stat_cell(l.player, 'PTS', '<strong>%s</strong>'|format(l.pts)|safe) }}
+      {{ stat_cell(l.player, 'FG', '%s-%s'|format(l.fgm, l.fga)) }}
+      <td>{{ l.fg_pct if l.fg_pct is not none else '—' }}</td>
+      {{ stat_cell(l.player, '3PT', '%s-%s'|format(l.threes_made, l.threes_att)) }}
+      <td>{{ l.three_pct if l.three_pct is not none else '—' }}</td>
+      {{ stat_cell(l.player, 'FT', '%s-%s'|format(l.ft_made, l.ft_att)) }}
+      <td>{{ l.ft_pct if l.ft_pct is not none else '—' }}</td>
+      {{ stat_cell(l.player, 'OREB', l.oreb) }}
+      {{ stat_cell(l.player, 'DREB', l.dreb) }}
+      {{ stat_cell(l.player, 'REB', l.reb) }}
+      {{ stat_cell(l.player, 'AST', l.ast) }}
+      {{ stat_cell(l.player, 'STL', l.stl) }}
+      {{ stat_cell(l.player, 'BLK', l.blk) }}
+      {{ stat_cell(l.player, 'TO', l.to) }}
+    </tr>
+    {% endfor %}
+    <tr class="totals-row">
+      <td><strong>Team</strong></td>
+      <td>{{ totals.gp }}</td>
+      {{ stat_cell('', 'PTS', '<strong>%s</strong>'|format(totals.pts)|safe) }}
+      {{ stat_cell('', 'FG', '%s-%s'|format(totals.fgm, totals.fga)) }}
+      <td>{{ totals.fg_pct if totals.fg_pct is not none else '—' }}</td>
+      {{ stat_cell('', '3PT', '%s-%s'|format(totals.threes_made, totals.threes_att)) }}
+      <td>{{ totals.three_pct if totals.three_pct is not none else '—' }}</td>
+      {{ stat_cell('', 'FT', '%s-%s'|format(totals.ft_made, totals.ft_att)) }}
+      <td>{{ totals.ft_pct if totals.ft_pct is not none else '—' }}</td>
+      {{ stat_cell('', 'OREB', totals.oreb) }}
+      {{ stat_cell('', 'DREB', totals.dreb) }}
+      {{ stat_cell('', 'REB', totals.reb) }}
+      {{ stat_cell('', 'AST', totals.ast) }}
+      {{ stat_cell('', 'STL', totals.stl) }}
+      {{ stat_cell('', 'BLK', totals.blk) }}
+      {{ stat_cell('', 'TO', totals.to) }}
+    </tr>
+  </table>
+  </div>
+</div>
+
+<div class="panel">
+  <h3>Per-game averages</h3>
+  <div style="overflow-x:auto">
+  <table>
+    <tr>
+      <th>Player</th><th>GP</th><th>PTS</th><th>FG</th><th>3PT</th><th>FT</th>
+      <th>OREB</th><th>DREB</th><th>REB</th><th>AST</th><th>STL</th><th>BLK</th><th>TO</th>
+    </tr>
+    {% for l in avg_lines %}
+    <tr>
+      <td><strong>{{ l.player }}</strong></td>
+      <td>{{ l.gp }}</td>
+      {{ stat_cell(l.player, 'PTS', '<strong>%s</strong>'|format(l.avg_pts)|safe) }}
+      {{ stat_cell(l.player, 'FG', '%s-%s'|format(l.avg_fgm, l.avg_fga)) }}
+      {{ stat_cell(l.player, '3PT', '%s-%s'|format(l.avg_threes_made, l.avg_threes_att)) }}
+      {{ stat_cell(l.player, 'FT', '%s-%s'|format(l.avg_ft_made, l.avg_ft_att)) }}
+      {{ stat_cell(l.player, 'OREB', l.avg_oreb) }}
+      {{ stat_cell(l.player, 'DREB', l.avg_dreb) }}
+      {{ stat_cell(l.player, 'REB', l.avg_reb) }}
+      {{ stat_cell(l.player, 'AST', l.avg_ast) }}
+      {{ stat_cell(l.player, 'STL', l.avg_stl) }}
+      {{ stat_cell(l.player, 'BLK', l.avg_blk) }}
+      {{ stat_cell(l.player, 'TO', l.avg_to) }}
+    </tr>
+    {% endfor %}
+  </table>
+  </div>
+  <p class="small" style="margin-bottom:0">Averages are per session played (GP = sessions where the player has at least one coded stat).</p>
+</div>
+{% else %}
+<div class="panel"><div class="empty">No coded stats yet{% if type_filter %} for {{ 'Other' if type_filter == 'other' else type_filter }} sessions{% endif %}. Upload timelines on the <a href="/film">Film page</a>.</div></div>
+{% endif %}
+
+<script>
+window.STATS_DATA = {{ stats_json|safe }};
+(function () {
+  var STAT_EVENTS = {
+    "PTS": ["+2", "+3", "FT Made"],
+    "FG": ["+2", "-2", "+3", "-3"],
+    "3PT": ["+3", "-3"],
+    "FT": ["FT Made", "FT Miss"],
+    "OREB": ["OREB"], "DREB": ["DREB"], "REB": ["OREB", "DREB"],
+    "AST": ["Assist"], "STL": ["Steal"], "BLK": ["Block"], "TO": ["TO"]
+  };
+  var STAT_LABELS = {
+    "PTS": "scoring plays", "FG": "field goal attempts", "3PT": "threes",
+    "FT": "free throws", "OREB": "offensive rebounds", "DREB": "defensive rebounds",
+    "REB": "rebounds", "AST": "assists", "STL": "steals", "BLK": "blocks", "TO": "turnovers"
+  };
+  var data = window.STATS_DATA;
+
+  function sessionCount(player, sid, events) {
+    var n = 0;
+    var players = player ? [player] : Object.keys(data.counts);
+    players.forEach(function (p) {
+      var per = (data.counts[p] || {})[sid] || {};
+      events.forEach(function (ev) { n += per[ev] || 0; });
+    });
+    return n;
+  }
+
+  function showSessions(player, stat) {
+    var events = STAT_EVENTS[stat] || [];
+    var bar = document.getElementById("clip-bar");
+    var label = document.getElementById("clip-label");
+    var chipBox = document.getElementById("clip-chips");
+    var who = player || "Team";
+    chipBox.innerHTML = "";
+    var total = 0, chips = 0;
+    Object.keys(data.sessions).forEach(function (sid) {
+      var n = sessionCount(player, sid, events);
+      if (!n) return;
+      total += n; chips += 1;
+      var a = document.createElement("a");
+      a.className = "clip-chip";
+      a.href = "/film/" + sid + "?player=" + encodeURIComponent(player || "") + "&stat=" + encodeURIComponent(stat);
+      a.textContent = data.sessions[sid].label + " · " + n + " ▶";
+      a.title = "Open this session and play these clips";
+      chipBox.appendChild(a);
+    });
+    label.textContent = total
+      ? who + " — " + total + " " + (STAT_LABELS[stat] || stat) + " across " + chips + " session" + (chips === 1 ? "" : "s") + " — click one to watch"
+      : who + " — no " + (STAT_LABELS[stat] || stat) + " in these sessions";
+    bar.hidden = false;
+    bar.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+
+  document.querySelectorAll(".stat-cell").forEach(function (td) {
+    td.addEventListener("click", function () {
+      showSessions(td.dataset.player, td.dataset.stat);
+    });
+  });
+})();
+</script>
+{% endblock %}
