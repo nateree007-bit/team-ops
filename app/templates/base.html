@@ -29,6 +29,7 @@
     </nav>
     <main class="content">
       <div class="container">
+        {% if back_href %}<a class="back-link" href="{{ back_href }}">&larr; Back to {{ back_label }}</a>{% endif %}
         {% block content %}{% endblock %}
       </div>
     </main>

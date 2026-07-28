@@ -886,6 +886,17 @@ tr.past td { opacity: .45; }
   font-size: 13px;
 }
 
+.back-link {
+  display: inline-block;
+  margin-bottom: 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.back-link:hover { color: var(--text); }
+
 .part-btns {
   display: flex;
   flex-wrap: wrap;
