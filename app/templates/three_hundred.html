@@ -93,6 +93,59 @@
   {% endif %}
 </div>
 
+{% if has_weekly_standings %}
+<div class="panel">
+  <h3>Standings week by week</h3>
+  <p class="small">Total makes through the end of each week — pick a week to see who was leading at that point.</p>
+  <div class="part-btns" id="wk-btns"></div>
+  <div style="overflow-x:auto">
+  <table id="wk-table">
+    <tr><th>#</th><th>Player</th><th>That week</th><th>Total through week</th></tr>
+  </table>
+  </div>
+</div>
+<script>
+window.WEEKLY_STANDINGS = {{ weekly_standings_json|safe }};
+(function () {
+  var weeks = window.WEEKLY_STANDINGS;
+  var btnBox = document.getElementById("wk-btns");
+  var table = document.getElementById("wk-table");
+
+  function esc(s) {
+    var d = document.createElement("div");
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  function render(i) {
+    btnBox.querySelectorAll(".part-btn").forEach(function (b, j) {
+      b.classList.toggle("active", j === i);
+    });
+    var w = weeks[i];
+    var html = "<tr><th>#</th><th>Player</th><th>That week</th><th>Total through week " + w.num + "</th></tr>";
+    var rank = 0, shown = 0, prevCum = null;
+    w.standings.forEach(function (s) {
+      shown += 1;
+      if (s.cum !== prevCum) { rank = shown; prevCum = s.cum; }
+      html += "<tr><td>" + rank + "</td><td>" + (rank === 1 && s.cum > 0 ? "👑 " : "") + esc(s.name) + "</td><td>" + s.week + "</td><td><strong>" + s.cum + "</strong></td></tr>";
+    });
+    table.innerHTML = html;
+  }
+
+  weeks.forEach(function (w, i) {
+    var b = document.createElement("button");
+    b.type = "button";
+    b.className = "part-btn";
+    b.textContent = "Week " + w.num;
+    b.title = w.label;
+    b.addEventListener("click", function () { render(i); });
+    btnBox.appendChild(b);
+  });
+  render(weeks.length - 1);
+})();
+</script>
+{% endif %}
+
 <div class="panel">
   <h3>Streaks</h3>
   {% if streaks %}

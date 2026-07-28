@@ -843,6 +843,16 @@ FILM_PLAYER_ALIASES = {
     "DJdric": "Cedric",
 }
 
+# People coded in film who aren't on the team, plus team-row names that leak
+# through when a stat label has no player group — never show these in stats.
+FILM_IGNORED_PLAYERS = {"NS", "Unknown"}
+_TEAM_ROW_RE = re.compile(r"^(white|blue|red)\s*\d*$", re.IGNORECASE)
+
+
+def _film_player_ignored(name: str) -> bool:
+    name = name.strip()
+    return name in FILM_IGNORED_PLAYERS or bool(_TEAM_ROW_RE.match(name))
+
 
 def _dedupe_film_events(rows):
     """Drop double-coded plays before computing stats or clips.
@@ -900,6 +910,8 @@ def _parse_sctimeline(raw: bytes):
                     continue
                 group = (label.get("group") or "").strip()
                 player = FILM_PLAYER_ALIASES.get(group, group) or row_name or "Unknown"
+                if _film_player_ignored(player):
+                    continue
                 events.append(
                     {
                         "player": player,
@@ -1156,6 +1168,7 @@ def film_detail(request: Request, session_id: int):
     canonical: dict[str, str] = {}
     for r in rows:
         r["player"] = FILM_PLAYER_ALIASES.get(r["player"], r["player"])
+    rows = [r for r in rows if not _film_player_ignored(r["player"])]
     for r in rows:
         low = r["player"].strip().lower()
         if low not in canonical or (canonical[low].islower() and not r["player"].islower()):
@@ -1410,6 +1423,45 @@ def three_hundred(request: Request, week: str = ""):
     for r in all_logs:
         by_player.setdefault(r["player_id"], []).append((r["log_date"], r["makes"]))
 
+    # Week-by-week standings: cumulative totals through the end of each week,
+    # so you can see who was leading as of week 2, week 4, etc.
+    weekly_standings = []
+    log_week_starts = sorted(
+        {_week_start(datetime.strptime(r["log_date"], "%Y-%m-%d").date()) for r in all_logs}
+    )
+    if log_week_starts:
+        first_week = log_week_starts[0]
+        last_week = max(log_week_starts[-1], _week_start(today))
+        n_weeks = min((last_week - first_week).days // 7 + 1, 60)
+        per_week: dict[int, list[int]] = {p["id"]: [0] * n_weeks for p in players}
+        for r in all_logs:
+            idx = (
+                _week_start(datetime.strptime(r["log_date"], "%Y-%m-%d").date()) - first_week
+            ).days // 7
+            if r["player_id"] in per_week and 0 <= idx < n_weeks:
+                per_week[r["player_id"]][idx] += r["makes"] or 0
+        for i in range(n_weeks):
+            ws = first_week + timedelta(days=7 * i)
+            we = ws + timedelta(days=6)
+            standings = sorted(
+                (
+                    {
+                        "name": p["name"],
+                        "week": per_week[p["id"]][i],
+                        "cum": sum(per_week[p["id"]][: i + 1]),
+                    }
+                    for p in players
+                ),
+                key=lambda x: -x["cum"],
+            )
+            weekly_standings.append(
+                {
+                    "num": i + 1,
+                    "label": f"{ws.strftime('%b')} {ws.day} – {we.strftime('%b')} {we.day}",
+                    "standings": standings,
+                }
+            )
+
     streaks = []
     for p in players:
         entries = by_player.get(p["id"], [])
@@ -1457,6 +1509,8 @@ def three_hundred(request: Request, week: str = ""):
             "grid": grid,
             "week_totals": week_totals,
             "all_time": all_time,
+            "weekly_standings_json": json.dumps(weekly_standings).replace("</", "<\\/"),
+            "has_weekly_standings": bool(weekly_standings),
             "streaks": streaks,
             "goal": GOAL,
             "prev_week": (wk_start - timedelta(days=7)).isoformat(),
