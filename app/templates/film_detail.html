@@ -139,11 +139,67 @@
     </tr>
   </table>
   </div>
-  <p class="small" style="margin-bottom:0">PTS from +2/+3/FT Made · shooting splits from made vs. missed codes · plays coded on both a team row and a player row are counted once.</p>
+  <p class="small" style="margin-bottom:0">PTS from +2/+3/FT Made · shooting splits from made vs. missed codes{% if dup_pending or dup_resolved %} · double-coded plays are handled in the <a href="#dupes">double-code check</a> below{% endif %}.</p>
   {% else %}
   <div class="empty">No stat events found in this timeline.</div>
   {% endif %}
 </div>
+
+{% if dup_pending or dup_resolved %}
+<div class="panel" id="dupes">
+  <h3>Double-code check{% if dup_pending %} — {{ dup_pending|length }} to review{% endif %}</h3>
+  <p class="small">Same player, same stat, at nearly the same time. Suspected accidental double-codes are <strong>counted once</strong>; one clip carrying a stat twice (like a 2-for-2 trip to the line) is <strong>counted twice</strong>. Fix any that are wrong — your call sticks.</p>
+  {% if dup_pending %}
+  <div style="overflow-x:auto">
+  <table>
+    <tr>{% if multi %}<th>Part</th>{% endif %}<th>Player</th><th>Stat</th><th>Coded at</th><th>Right now</th><th></th></tr>
+    {% for d in dup_pending %}
+    <tr>
+      {% if multi %}<td>{{ d.part }}</td>{% endif %}
+      <td><strong>{{ d.player }}</strong></td>
+      <td>{{ d.event }}</td>
+      <td>{{ d.times }}</td>
+      <td>counted {{ 'twice' if d.counted else 'once' }}</td>
+      <td>
+        <form class="inline" method="post" action="/film/{{ session.id }}/dupes/{{ d.id }}">
+          <button type="submit" name="decision" value="once" {% if not d.counted %}title="Keep it counted once"{% endif %}>Count once</button>
+          <button type="submit" name="decision" value="both" {% if d.counted %}title="Keep both counted"{% endif %}>Count both</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  </div>
+  <form class="inline" method="post" action="/film/{{ session.id }}/dupes/accept-all" style="margin-top:10px">
+    <button type="submit">These all look right — accept all</button>
+  </form>
+  {% else %}
+  <p class="small" style="margin-bottom:0">All reviewed ✓</p>
+  {% endif %}
+  {% if dup_resolved %}
+  <details style="margin-top:10px">
+    <summary class="small" style="cursor:pointer">Reviewed ({{ dup_resolved|length }})</summary>
+    <table style="margin-top:8px">
+      <tr>{% if multi %}<th>Part</th>{% endif %}<th>Player</th><th>Stat</th><th>Coded at</th><th>Decision</th><th></th></tr>
+      {% for d in dup_resolved %}
+      <tr>
+        {% if multi %}<td>{{ d.part }}</td>{% endif %}
+        <td><strong>{{ d.player }}</strong></td>
+        <td>{{ d.event }}</td>
+        <td>{{ d.times }}</td>
+        <td>counted {{ 'twice' if d.counted else 'once' }}</td>
+        <td>
+          <form class="inline" method="post" action="/film/{{ session.id }}/dupes/{{ d.id }}">
+            <button type="submit" name="decision" value="reset">Undo</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+  </details>
+  {% endif %}
+</div>
+{% endif %}
 
 <div class="panel">
   <h3>Timelines for this day</h3>

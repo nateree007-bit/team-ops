@@ -93,7 +93,8 @@ CREATE TABLE IF NOT EXISTS film_events (
     player TEXT NOT NULL,
     event TEXT NOT NULL,
     start_time REAL,
-    end_time REAL
+    end_time REAL,
+    dup_status TEXT
 );
 
 CREATE TABLE IF NOT EXISTS film_videos (
@@ -159,6 +160,8 @@ def init_db():
         film_event_columns = {row["name"] for row in conn.execute("PRAGMA table_info(film_events)")}
         if "part" not in film_event_columns:
             conn.execute("ALTER TABLE film_events ADD COLUMN part INTEGER NOT NULL DEFAULT 1")
+        if "dup_status" not in film_event_columns:
+            conn.execute("ALTER TABLE film_events ADD COLUMN dup_status TEXT")
         if not had_film_videos:
             # Move single-video links into the new per-part videos table.
             conn.execute(

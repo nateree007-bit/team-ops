@@ -858,36 +858,93 @@ def _film_player_ignored(name: str) -> bool:
 
 
 def _dedupe_film_events(rows):
-    """Drop double-coded plays before computing stats or clips.
+    """Find double-coded plays, decide what counts, and flag each for review.
 
     Coders often tag the same play twice — once on the team row (White/Blue)
     and once on the player's own row — a few seconds apart with overlapping
     clip windows, which counted every made FT (and some other stats) twice.
     Two events are the same play when they share part+player+stat and their
-    clip windows overlap. Events with identical start AND end came from one
-    instance labeled multiple times on purpose (e.g. a 2-for-2 trip to the
-    line) and are kept.
+    clip windows overlap: counted ONCE unless marked 'restored'. Events with
+    identical start AND end came from one clip labeled twice — usually on
+    purpose (a 2-for-2 trip to the line) — so they're counted TWICE unless
+    marked 'confirmed' as accidental. Returns (kept, flags) where kept rows
+    feed the stats and each flag holds the row, the play it doubles
+    (partner), its review status and whether it's currently counted.
     """
     kept_windows: dict[tuple, list] = {}
-    out = []
+    kept, flags = [], []
     for r in sorted(rows, key=lambda r: (r["part"], r["start_time"] is None, r["start_time"] or 0)):
         s = r["start_time"]
-        if s is not None:
-            e = r["end_time"] if r["end_time"] is not None else s + 8
-            key = (r["part"], r["player"].strip().lower(), r["event"])
-            windows = kept_windows.setdefault(key, [])
-            dup = False
-            for ks, ke in windows:
-                if s == ks and e == ke:
-                    continue
-                if s <= ke and ks <= e:
-                    dup = True
-                    break
-            if dup:
-                continue
-            windows.append((s, e))
-        out.append(r)
-    return out
+        if s is None:
+            kept.append(r)
+            continue
+        e = r["end_time"] if r["end_time"] is not None else s + 8
+        key = (r["part"], r["player"].strip().lower(), r["event"])
+        windows = kept_windows.setdefault(key, [])
+        same_instance = overlap = None
+        for ks, ke, kr in windows:
+            if s == ks and e == ke:
+                same_instance = kr
+                break
+            if overlap is None and s <= ke and ks <= e:
+                overlap = kr
+        status = r.get("dup_status")
+        if same_instance is not None:
+            counted = status != "confirmed"
+        elif overlap is not None:
+            counted = status == "restored"
+        else:
+            windows.append((s, e, r))
+            kept.append(r)
+            continue
+        flags.append(
+            {
+                "row": r,
+                "partner": same_instance if same_instance is not None else overlap,
+                "status": status or "pending",
+                "counted": counted,
+            }
+        )
+        if counted:
+            windows.append((s, e, r))
+            kept.append(r)
+    return kept, flags
+
+
+def _load_film_events(conn, session_id: int):
+    """Fetch a session's events with aliases, canonical spelling, the
+    non-roster filter and the double-code pass applied. Returns (kept, flags)
+    as in _dedupe_film_events."""
+    rows = [
+        dict(r)
+        for r in conn.execute(
+            """SELECT id, part, player, event, start_time, end_time, dup_status
+               FROM film_events
+               WHERE session_id = ? ORDER BY part, (start_time IS NULL), start_time""",
+            (session_id,),
+        )
+    ]
+    # Aliases apply here too so sessions uploaded before an alias was added
+    # get fixed without re-uploading.
+    for r in rows:
+        r["player"] = FILM_PLAYER_ALIASES.get(r["player"], r["player"])
+    rows = [r for r in rows if not _film_player_ignored(r["player"])]
+    # Canonicalize player spelling (label groups sometimes differ in case
+    # from row names, e.g. "cedric" vs "Cedric") so one player is one line.
+    canonical: dict[str, str] = {}
+    for r in rows:
+        low = r["player"].strip().lower()
+        if low not in canonical or (canonical[low].islower() and not r["player"].islower()):
+            canonical[low] = r["player"].strip()
+    for r in rows:
+        r["player"] = canonical[r["player"].strip().lower()]
+    return _dedupe_film_events(rows)
+
+
+def _fmt_clip_time(t) -> str:
+    t = max(0, int(t or 0))
+    h, m, s = t // 3600, (t % 3600) // 60, t % 60
+    return f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
 
 
 def _parse_sctimeline(raw: bytes):
@@ -1079,6 +1136,10 @@ def list_film(request: Request):
            FROM film_sessions
            ORDER BY (session_date IS NULL), session_date DESC, created_at DESC"""
     ).fetchall()
+    sessions = [dict(s) for s in sessions]
+    for s in sessions:
+        _, flags = _load_film_events(conn, s["id"])
+        s["pending_dupes"] = sum(1 for f in flags if f["status"] == "pending")
     conn.close()
     return templates.TemplateResponse(
         request, "film.html", {"sessions": sessions, "active": "film"}
@@ -1167,6 +1228,36 @@ def edit_film_session(session_id: int, title: str = Form(""), session_date: str 
     return RedirectResponse(f"/film/{session_id}", status_code=303)
 
 
+@app.post("/film/{session_id}/dupes/accept-all")
+def accept_all_film_dupes(session_id: int):
+    """Accept the current handling of every pending double-code flag."""
+    conn = db.get_connection()
+    _, flags = _load_film_events(conn, session_id)
+    for f in flags:
+        if f["status"] == "pending":
+            conn.execute(
+                "UPDATE film_events SET dup_status = ? WHERE id = ?",
+                ("restored" if f["counted"] else "confirmed", f["row"]["id"]),
+            )
+    conn.commit()
+    conn.close()
+    return RedirectResponse(f"/film/{session_id}#dupes", status_code=303)
+
+
+@app.post("/film/{session_id}/dupes/{event_id}")
+def resolve_film_dupe(session_id: int, event_id: int, decision: str = Form("")):
+    mapping = {"once": "confirmed", "both": "restored", "reset": None}
+    if decision in mapping:
+        conn = db.get_connection()
+        conn.execute(
+            "UPDATE film_events SET dup_status = ? WHERE id = ? AND session_id = ?",
+            (mapping[decision], event_id, session_id),
+        )
+        conn.commit()
+        conn.close()
+    return RedirectResponse(f"/film/{session_id}#dupes", status_code=303)
+
+
 @app.post("/film/{session_id}/parts/{part}/delete")
 def delete_film_part(session_id: int, part: int):
     conn = db.get_connection()
@@ -1250,36 +1341,13 @@ def film_detail(request: Request, session_id: int):
     session = conn.execute(
         "SELECT * FROM film_sessions WHERE id = ?", (session_id,)
     ).fetchone()
-    rows = [
-        dict(r)
-        for r in conn.execute(
-            """SELECT part, player, event, start_time, end_time FROM film_events
-               WHERE session_id = ? ORDER BY part, (start_time IS NULL), start_time""",
-            (session_id,),
-        )
-    ]
+    rows, dup_flags = _load_film_events(conn, session_id)
     videos = conn.execute(
         "SELECT part, url, kind FROM film_videos WHERE session_id = ? ORDER BY part",
         (session_id,),
     ).fetchall()
     conn.close()
 
-    # Canonicalize player spelling (label groups sometimes differ in case
-    # from row names, e.g. "cedric" vs "Cedric") so one player is one line.
-    # Aliases apply here too so sessions uploaded before an alias was added
-    # get fixed without re-uploading.
-    canonical: dict[str, str] = {}
-    for r in rows:
-        r["player"] = FILM_PLAYER_ALIASES.get(r["player"], r["player"])
-    rows = [r for r in rows if not _film_player_ignored(r["player"])]
-    for r in rows:
-        low = r["player"].strip().lower()
-        if low not in canonical or (canonical[low].islower() and not r["player"].islower()):
-            canonical[low] = r["player"].strip()
-    for r in rows:
-        r["player"] = canonical[r["player"].strip().lower()]
-
-    rows = _dedupe_film_events(rows)
     lines, totals = _film_box_score(rows)
     clips = [
         {
@@ -1292,6 +1360,21 @@ def film_detail(request: Request, session_id: int):
         for r in rows
         if r["start_time"] is not None
     ]
+    dup_view = [
+        {
+            "id": f["row"]["id"],
+            "part": f["row"]["part"],
+            "player": f["row"]["player"],
+            "event": f["row"]["event"],
+            "times": f"{_fmt_clip_time(f['partner']['start_time'])} & {_fmt_clip_time(f['row']['start_time'])}",
+            "status": f["status"],
+            "counted": f["counted"],
+        }
+        for f in dup_flags
+    ]
+    dup_pending = [d for d in dup_view if d["status"] == "pending"]
+    dup_resolved = [d for d in dup_view if d["status"] != "pending"]
+
     event_parts = sorted({r["part"] for r in rows})
     video_parts = sorted({v["part"] for v in videos})
     parts = sorted(set(event_parts) | set(video_parts)) or [1]
@@ -1314,6 +1397,8 @@ def film_detail(request: Request, session_id: int):
             "totals": totals,
             "clips_json": json.dumps(clips).replace("</", "<\\/"),
             "has_clips": bool(clips),
+            "dup_pending": dup_pending,
+            "dup_resolved": dup_resolved,
             "parts": parts,
             "part_event_counts": part_event_counts,
             "videos_by_part": videos_by_part,

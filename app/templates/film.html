@@ -23,7 +23,7 @@
     {% for s in sessions %}
     <tr onclick="location.href='/film/{{ s.id }}'" style="cursor:pointer">
       <td>{{ s.session_date or '—' }}</td>
-      <td>{{ s.title }}{% if s.part_count > 1 %} <span class="small">· {{ s.part_count }} parts</span>{% endif %}</td>
+      <td>{{ s.title }}{% if s.part_count > 1 %} <span class="small">· {{ s.part_count }} parts</span>{% endif %}{% if s.pending_dupes %} <span class="small" style="color:var(--warn)">⚠ {{ s.pending_dupes }} to review</span>{% endif %}</td>
       <td>{{ s.event_count }}</td>
       <td>{% if s.video_count %}🎥 {% if s.video_count > 1 %}{{ s.video_count }} attached{% else %}attached{% endif %}{% else %}<span class="small" style="color:var(--warn)">none yet</span>{% endif %}</td>
     </tr>
