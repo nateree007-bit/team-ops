@@ -837,7 +837,8 @@ FILM_STAT_EVENTS = {
 FILM_PLAYER_ALIASES = {
     "BB": "Beau",
     "BW": "Bryson",
-    "CE": "Cedric",
+    "CE": "DJ",
+    "Cenker": "DJ",
     "IL": "Isaiah",
     "JA": "Jamal",
     "DanielMich": "Daniel",
