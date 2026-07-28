@@ -9,6 +9,15 @@
   </form>
 </div>
 
+<details class="change-link" style="margin-bottom:14px">
+  <summary>Edit title or date</summary>
+  <form method="post" action="/film/{{ session.id }}/edit" class="change-link-form" style="position:static">
+    <input name="title" value="{{ session.title }}" placeholder="Session title" required>
+    <input type="date" name="session_date" value="{{ session.session_date or '' }}" title="Leave empty for no date">
+    <button type="submit">Save</button>
+  </form>
+</details>
+
 <div class="panel">
   {% if not has_videos %}
   <h3>Attach the session video</h3>

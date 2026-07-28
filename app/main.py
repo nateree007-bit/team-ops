@@ -1146,6 +1146,27 @@ async def upload_film_part(session_id: int, file: UploadFile = File(...)):
     return RedirectResponse(f"/film/{session_id}", status_code=303)
 
 
+@app.post("/film/{session_id}/edit")
+def edit_film_session(session_id: int, title: str = Form(""), session_date: str = Form("")):
+    title = title.strip()
+    session_date = session_date.strip()
+    if session_date:
+        try:
+            datetime.strptime(session_date, "%Y-%m-%d")
+        except ValueError:
+            session_date = ""
+    conn = db.get_connection()
+    if title:
+        conn.execute("UPDATE film_sessions SET title = ? WHERE id = ?", (title, session_id))
+    conn.execute(
+        "UPDATE film_sessions SET session_date = ? WHERE id = ?",
+        (session_date or None, session_id),
+    )
+    conn.commit()
+    conn.close()
+    return RedirectResponse(f"/film/{session_id}", status_code=303)
+
+
 @app.post("/film/{session_id}/parts/{part}/delete")
 def delete_film_part(session_id: int, part: int):
     conn = db.get_connection()
