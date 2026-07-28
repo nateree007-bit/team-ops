@@ -1,4 +1,6 @@
 import base64
+import csv
+import io
 import json
 import os
 import re
@@ -923,6 +925,85 @@ def _parse_sctimeline(raw: bytes):
     return session_date, events
 
 
+def _parse_film_csv(raw: bytes):
+    """Parse a Sportscode matrix CSV export: one row per clip instance, one
+    column per label group (player code), cells holding the stat label.
+    Returns (title, events)."""
+    try:
+        text = raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        text = raw.decode("utf-16")
+    rows = [r for r in csv.reader(io.StringIO(text)) if any(c.strip() for c in r)]
+    if not rows:
+        raise ValueError("empty file")
+    header = [c.strip() for c in rows[0]]
+    cols = {name: i for i, name in enumerate(header)}
+    if "Start time" not in cols or "Row" not in cols:
+        raise ValueError("not a Sportscode CSV export")
+    meta = {"Timeline", "Start time", "Duration", "Row", "Instance number", "Notes", "Flags"}
+    group_cols = [(name, i) for i, name in enumerate(header) if name and name not in meta]
+
+    def cell(r, name):
+        i = cols.get(name)
+        return r[i].strip() if i is not None and i < len(r) else ""
+
+    title = None
+    events = []
+    for r in rows[1:]:
+        if title is None and cell(r, "Timeline"):
+            title = cell(r, "Timeline")
+        try:
+            start = float(cell(r, "Start time"))
+        except ValueError:
+            start = None
+        end = None
+        if start is not None:
+            try:
+                end = start + float(cell(r, "Duration"))
+            except ValueError:
+                pass
+        row_name = cell(r, "Row")
+        for gname, gi in group_cols:
+            val = r[gi].strip() if gi < len(r) else ""
+            if val not in FILM_STAT_EVENTS:
+                continue
+            group = "" if gname == "Ungrouped" else gname
+            player = FILM_PLAYER_ALIASES.get(group, group) or row_name or "Unknown"
+            if _film_player_ignored(player):
+                continue
+            events.append({"player": player, "event": val, "start": start, "end": end})
+    return title, events
+
+
+def _guess_date_from_name(name: str):
+    """Pull a date like 07-07-26, 6.16.26 or 23 06 2026 out of a session or
+    file name. US month-first, but swaps when the first number can't be a
+    month. Returns ISO date or None."""
+    m = re.search(r"(\d{1,2})[-./ ](\d{1,2})[-./ ](\d{2,4})", name or "")
+    if not m:
+        return None
+    a, b, y = (int(g) for g in m.groups())
+    if y < 100:
+        y += 2000
+    elif y < 2000:
+        return None
+    month, day = (a, b) if a <= 12 else (b, a)
+    try:
+        return date(y, month, day).isoformat()
+    except ValueError:
+        return None
+
+
+def _parse_film_file(filename: str, raw: bytes):
+    """Parse an uploaded stats file — .SCTimeline JSON or Sportscode CSV
+    export. Returns (title_hint, session_date, events)."""
+    if (filename or "").lower().endswith(".csv"):
+        title, events = _parse_film_csv(raw)
+        return title, _guess_date_from_name(title or filename), events
+    session_date, events = _parse_sctimeline(raw)
+    return None, session_date or _guess_date_from_name(filename), events
+
+
 def _film_box_score(rows):
     """Aggregate film_events rows into per-player box score lines."""
     players: dict[str, dict] = {}
@@ -1007,16 +1088,16 @@ def list_film(request: Request):
 async def upload_film(title: str = Form(""), file: UploadFile = File(...)):
     raw = await file.read()
     try:
-        session_date, events = _parse_sctimeline(raw)
-    except (json.JSONDecodeError, UnicodeDecodeError, AttributeError, TypeError):
+        title_hint, session_date, events = _parse_film_file(file.filename, raw)
+    except (ValueError, UnicodeDecodeError, AttributeError, TypeError, KeyError, IndexError):
         return Response(
-            "Couldn't parse that file as a Sportscode timeline (.SCTimeline). "
-            "Make sure you're uploading the .SCTimeline file from inside the package.",
+            "Couldn't read that file. Upload the .SCTimeline file from inside a "
+            "Sportscode package, or the CSV export of the timeline.",
             media_type="text/plain",
             status_code=400,
         )
 
-    clean_title = title.strip() or (file.filename or "Untitled session").rsplit(".", 1)[0]
+    clean_title = title.strip() or title_hint or (file.filename or "Untitled session").rsplit(".", 1)[0]
     conn = db.get_connection()
     cur = conn.execute(
         "INSERT INTO film_sessions (title, session_date, source_file) VALUES (?, ?, ?)",
@@ -1038,11 +1119,11 @@ async def upload_film_part(session_id: int, file: UploadFile = File(...)):
     """Add another timeline to an existing day (recording got cut in two)."""
     raw = await file.read()
     try:
-        _, events = _parse_sctimeline(raw)
-    except (json.JSONDecodeError, UnicodeDecodeError, AttributeError, TypeError):
+        _, _, events = _parse_film_file(file.filename, raw)
+    except (ValueError, UnicodeDecodeError, AttributeError, TypeError, KeyError, IndexError):
         return Response(
-            "Couldn't parse that file as a Sportscode timeline (.SCTimeline). "
-            "Make sure you're uploading the .SCTimeline file from inside the package.",
+            "Couldn't read that file. Upload the .SCTimeline file from inside a "
+            "Sportscode package, or the CSV export of the timeline.",
             media_type="text/plain",
             status_code=400,
         )

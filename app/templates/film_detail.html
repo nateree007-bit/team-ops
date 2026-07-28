@@ -157,7 +157,7 @@
   <details style="margin-top:12px">
     <summary class="small" style="cursor:pointer">Recording got cut? Add the second timeline for this day</summary>
     <form method="post" action="/film/{{ session.id }}/upload-part" enctype="multipart/form-data" style="margin-top:10px">
-      <input type="file" name="file" accept=".SCTimeline,application/json" required>
+      <input type="file" name="file" accept=".SCTimeline,.csv,application/json,text/csv" required>
       <div style="margin-top:12px"><button type="submit">Add timeline as part {{ parts[-1] + 1 }}</button></div>
     </form>
     <p class="small">Upload the .SCTimeline from the second recording — its stats get added to this day's box score, and you can attach that recording's video as its own part.</p>

@@ -5,12 +5,12 @@
 
 <div class="panel">
   <h3>Upload a Sportscode timeline</h3>
-  <p class="small">Upload the <strong>.SCTimeline</strong> file from a Sportscode package and the box score gets computed automatically from the coded timeline.</p>
+  <p class="small">Upload the <strong>.SCTimeline</strong> file from a Sportscode package — or the <strong>CSV export</strong> of the timeline — and the box score gets computed automatically from the coded stats.</p>
   <form method="post" action="/film/upload" enctype="multipart/form-data">
     <div class="form-grid">
       <div><label>Title (optional — defaults to the file name)</label><input name="title" placeholder="e.g. 6/30 Summer Workout"></div>
     </div>
-    <input type="file" name="file" accept=".SCTimeline,application/json" required>
+    <input type="file" name="file" accept=".SCTimeline,.csv,application/json,text/csv" required>
     <div style="margin-top:12px"><button type="submit">Upload &amp; get stats</button></div>
   </form>
 </div>
