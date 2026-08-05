@@ -3,10 +3,42 @@
 {% block title %}{{ player.name }} · Team Ops{% endblock %}
 {% block content %}
 <div class="actions-row">
-  <h1>{{ player.name }}</h1>
+  <h1>{{ player.name }}{% if player.jersey_number %} <span class="small">#{{ player.jersey_number }}</span>{% endif %}</h1>
   <form class="inline" method="post" action="/players/{{ player.id }}/delete" onsubmit="return confirm('Delete this player?')">
     <button type="submit" class="danger">Delete player</button>
   </form>
+</div>
+
+<div class="panel">
+  <div class="profile-card">
+    {% if player.headshot %}
+    <img class="avatar" src="/players/{{ player.id }}/headshot?v={{ player.headshot }}" alt="{{ player.name }}">
+    {% else %}
+    {% set parts = player.name.split() %}
+    <span class="avatar-fallback">{{ parts[0][0] }}{% if parts|length > 1 %}{{ parts[-1][0] }}{% endif %}</span>
+    {% endif %}
+    <div class="profile-facts">
+      <div><span class="small">Jersey</span><strong>{{ '#' ~ player.jersey_number if player.jersey_number else '—' }}</strong></div>
+      <div><span class="small">Position</span><strong>{{ player.position or '—' }}</strong></div>
+      <div><span class="small">Status</span><span class="badge {{ player.status }}">{{ player.status }}</span></div>
+      <div><span class="small">Birthday</span><strong>{{ player.birthday|fmt_birthday or '—' }}</strong></div>
+      {% if player.notes %}<div style="grid-column:1/-1"><span class="small">Notes</span>{{ player.notes }}</div>{% endif %}
+    </div>
+  </div>
+  <details class="change-link" style="margin-top:14px">
+    <summary>{{ 'Change or remove headshot' if player.headshot else 'Upload a headshot' }}</summary>
+    <div style="margin-top:10px">
+      <form class="inline" method="post" action="/players/{{ player.id }}/headshot" enctype="multipart/form-data">
+        <input type="file" name="file" accept="image/png,image/jpeg,image/webp,image/gif" required>
+        <button type="submit">{{ 'Replace photo' if player.headshot else 'Upload photo' }}</button>
+      </form>
+      {% if player.headshot %}
+      <form class="inline" method="post" action="/players/{{ player.id }}/headshot/delete" style="margin-left:8px">
+        <button type="submit" class="danger">Remove photo</button>
+      </form>
+      {% endif %}
+    </div>
+  </details>
 </div>
 
 <div class="panel">

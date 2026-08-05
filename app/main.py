@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 
 import anthropic
 from fastapi import FastAPI, File, Form, Request, UploadFile
-from fastapi.responses import RedirectResponse, Response
+from fastapi.responses import FileResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -273,6 +273,79 @@ def player_detail(request: Request, player_id: int):
     )
 
 
+# Headshots live next to the SQLite file so they persist on the Railway
+# volume across redeploys (anything in the repo image gets wiped).
+HEADSHOT_TYPES = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp", "image/gif": ".gif"}
+HEADSHOT_MAX_BYTES = 10 * 1024 * 1024
+
+
+def _headshot_dir():
+    d = db.DB_PATH.parent / "headshots"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _delete_headshot_file(filename):
+    if filename:
+        try:
+            (_headshot_dir() / filename).unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+@app.get("/players/{player_id}/headshot")
+def player_headshot(player_id: int):
+    conn = db.get_connection()
+    row = conn.execute("SELECT headshot FROM players WHERE id = ?", (player_id,)).fetchone()
+    conn.close()
+    if row and row["headshot"]:
+        path = _headshot_dir() / row["headshot"]
+        if path.exists():
+            media = {v: k for k, v in HEADSHOT_TYPES.items()}.get(path.suffix.lower())
+            return FileResponse(path, media_type=media)
+    return Response(status_code=404)
+
+
+@app.post("/players/{player_id}/headshot")
+async def upload_player_headshot(player_id: int, file: UploadFile = File(...)):
+    ext = HEADSHOT_TYPES.get((file.content_type or "").lower())
+    if ext is None:
+        return Response(
+            "That file type isn't supported — upload a PNG, JPG, WEBP or GIF photo.",
+            media_type="text/plain",
+            status_code=400,
+        )
+    raw = await file.read()
+    if len(raw) > HEADSHOT_MAX_BYTES:
+        return Response(
+            "That photo is over 10 MB — please use a smaller image.",
+            media_type="text/plain",
+            status_code=400,
+        )
+    filename = f"{player_id}-{int(time.time())}{ext}"
+    conn = db.get_connection()
+    old = conn.execute("SELECT headshot FROM players WHERE id = ?", (player_id,)).fetchone()
+    (_headshot_dir() / filename).write_bytes(raw)
+    conn.execute("UPDATE players SET headshot = ? WHERE id = ?", (filename, player_id))
+    conn.commit()
+    conn.close()
+    if old:
+        _delete_headshot_file(old["headshot"])
+    return RedirectResponse(f"/players/{player_id}", status_code=303)
+
+
+@app.post("/players/{player_id}/headshot/delete")
+def delete_player_headshot(player_id: int):
+    conn = db.get_connection()
+    old = conn.execute("SELECT headshot FROM players WHERE id = ?", (player_id,)).fetchone()
+    conn.execute("UPDATE players SET headshot = NULL WHERE id = ?", (player_id,))
+    conn.commit()
+    conn.close()
+    if old:
+        _delete_headshot_file(old["headshot"])
+    return RedirectResponse(f"/players/{player_id}", status_code=303)
+
+
 @app.post("/players/{player_id}/edit")
 def edit_player(
     player_id: int,
@@ -296,9 +369,12 @@ def edit_player(
 @app.post("/players/{player_id}/delete")
 def delete_player(player_id: int):
     conn = db.get_connection()
+    old = conn.execute("SELECT headshot FROM players WHERE id = ?", (player_id,)).fetchone()
     conn.execute("DELETE FROM players WHERE id = ?", (player_id,))
     conn.commit()
     conn.close()
+    if old:
+        _delete_headshot_file(old["headshot"])
     return RedirectResponse("/players", status_code=303)
 
 

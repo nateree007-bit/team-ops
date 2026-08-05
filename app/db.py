@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS players (
     status TEXT NOT NULL DEFAULT 'active',
     notes TEXT,
     birthday TEXT,
+    headshot TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -144,6 +145,8 @@ def init_db():
         columns = {row["name"] for row in conn.execute("PRAGMA table_info(players)")}
         if "birthday" not in columns:
             conn.execute("ALTER TABLE players ADD COLUMN birthday TEXT")
+        if "headshot" not in columns:
+            conn.execute("ALTER TABLE players ADD COLUMN headshot TEXT")
         event_columns = {row["name"] for row in conn.execute("PRAGMA table_info(events)")}
         if "event_time_end" not in event_columns:
             conn.execute("ALTER TABLE events ADD COLUMN event_time_end TEXT")

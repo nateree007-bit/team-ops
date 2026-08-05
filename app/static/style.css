@@ -886,6 +886,59 @@ tr.past td { opacity: .45; }
   font-size: 13px;
 }
 
+/* ---------- Player headshots ---------- */
+
+.avatar,
+.avatar-fallback {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  flex: none;
+  vertical-align: middle;
+}
+
+.avatar { object-fit: cover; display: inline-block; }
+
+.avatar-fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  background: var(--field-bg);
+  border: 1px solid var(--glass-border);
+}
+
+.avatar-cell { display: flex; align-items: center; gap: 10px; }
+
+.profile-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.profile-card .avatar,
+.profile-card .avatar-fallback {
+  width: 128px;
+  height: 128px;
+  border-radius: 16px;
+  font-size: 40px;
+}
+
+.profile-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, max-content));
+  gap: 8px 28px;
+  flex: 1;
+  min-width: 220px;
+}
+
+.profile-facts .small { display: block; }
+
+.profile-facts strong { font-size: 16px; }
+
 .back-link {
   display: inline-block;
   margin-bottom: 14px;

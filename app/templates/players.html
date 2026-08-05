@@ -33,7 +33,17 @@
     {% for p in players %}
     <tr onclick="location.href='/players/{{ p.id }}'" style="cursor:pointer">
       <td>{{ p.jersey_number or '—' }}</td>
-      <td>{{ p.name }}</td>
+      <td>
+        <span class="avatar-cell">
+          {% if p.headshot %}
+          <img class="avatar" src="/players/{{ p.id }}/headshot?v={{ p.headshot }}" alt="">
+          {% else %}
+          {% set parts = p.name.split() %}
+          <span class="avatar-fallback">{{ parts[0][0] }}{% if parts|length > 1 %}{{ parts[-1][0] }}{% endif %}</span>
+          {% endif %}
+          {{ p.name }}
+        </span>
+      </td>
       <td>{{ p.position or '—' }}</td>
       <td><span class="badge {{ p.status }}">{{ p.status }}</span></td>
       <td>{{ p.birthday|fmt_birthday or '—' }}</td>
